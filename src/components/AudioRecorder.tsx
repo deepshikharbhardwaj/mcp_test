@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button";
+import {
+  getSpeechRecognitionCtor,
+  SPEECH_LANGUAGES,
+  type SpeechRecognitionLike,
+} from "@/lib/speech";
 
 type RecordingState = "idle" | "recording" | "paused" | "stopped";
 
@@ -9,6 +14,10 @@ interface Props {
   existingUrl: string | null;
   onReady: (blob: Blob, mimeType: string, durationSeconds: number, source: "recorded" | "uploaded") => Promise<void>;
   onDelete: () => Promise<void>;
+  /** Fired live as speech is recognized while recording (recorded audio only — not for uploaded files). */
+  onTranscriptChunk: (text: string) => void;
+  /** Fired once recording has fully stopped and the audio blob has been saved. */
+  onRecordingFinished: () => void;
 }
 
 function pickMimeType(): string {
@@ -19,17 +28,22 @@ function pickMimeType(): string {
   return "audio/webm";
 }
 
-export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
+export function AudioRecorder({ existingUrl, onReady, onDelete, onTranscriptChunk, onRecordingFinished }: Props) {
   const [state, setState] = useState<RecordingState>(existingUrl ? "stopped" : "idle");
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [lang, setLang] = useState("en-IN");
+
+  const sttSupported = getSpeechRecognitionCtor() !== null;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const manualStopRef = useRef(false);
 
   useEffect(() => {
     setState(existingUrl ? "stopped" : "idle");
@@ -39,6 +53,7 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
     return () => {
       timerRef.current && clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      recognitionRef.current?.stop();
     };
   }, []);
 
@@ -48,6 +63,47 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
   function stopTimer() {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
+  }
+
+  function startRecognition() {
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return;
+    const recognition = new Ctor();
+    recognition.lang = lang;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (e) => {
+      let finalChunk = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (result?.isFinal) finalChunk += result[0]?.transcript ?? "";
+      }
+      if (finalChunk.trim()) onTranscriptChunk(finalChunk.trim());
+    };
+    recognition.onerror = () => {
+      // Non-fatal: recognition can drop out (silence, network blip) while the
+      // audio recording keeps going untouched. onend below restarts it.
+    };
+    recognition.onend = () => {
+      if (!manualStopRef.current) {
+        // Chrome ends recognition after a period of silence even mid-recording —
+        // restart so a full 1-5 minute talk isn't cut short.
+        try {
+          recognition.start();
+        } catch {
+          // ignore — a stray restart-while-already-started throws harmlessly
+        }
+      }
+    };
+    recognitionRef.current = recognition;
+    manualStopRef.current = false;
+    recognition.start();
+  }
+
+  function stopRecognition() {
+    manualStopRef.current = true;
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
   }
 
   async function handleStart() {
@@ -68,6 +124,7 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
         try {
           await onReady(blob, mimeType, seconds, "recorded");
           setState("stopped");
+          onRecordingFinished();
         } catch (err) {
           setError(err instanceof Error ? err.message : "Could not save recording.");
           setState("idle");
@@ -79,6 +136,7 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
       recorder.start();
       setSeconds(0);
       startTimer();
+      if (sttSupported) startRecognition();
       setState("recording");
     } catch {
       setError("Microphone access was denied or is unavailable.");
@@ -88,17 +146,20 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
   function handlePause() {
     mediaRecorderRef.current?.pause();
     stopTimer();
+    stopRecognition();
     setState("paused");
   }
 
   function handleResume() {
     mediaRecorderRef.current?.resume();
     startTimer();
+    if (sttSupported) startRecognition();
     setState("recording");
   }
 
   function handleStop() {
     stopTimer();
+    stopRecognition();
     mediaRecorderRef.current?.stop();
   }
 
@@ -116,6 +177,7 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
     try {
       await onReady(file, file.type || "audio/mpeg", 0, "uploaded");
       setState("stopped");
+      onRecordingFinished();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not upload audio.");
     } finally {
@@ -138,8 +200,24 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
           🎙
         </button>
         <p className="text-sm text-mist mt-4">Tell today&apos;s story — speak for a minute or five, in English, Hindi, or Hinglish.</p>
+        {sttSupported ? (
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <span className="text-xs text-mist">Speaking mostly in:</span>
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              className="text-xs bg-paper border border-sand rounded-full px-2 py-1.5 text-ink"
+            >
+              {SPEECH_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <p className="text-xs text-mist mt-3">Speech-to-text isn&apos;t available in this browser — you can type the transcript below after recording.</p>
+        )}
         <button
-          className="text-sm text-clay mt-3 hover:text-accent"
+          className="text-sm text-clay mt-3 hover:text-accent block mx-auto"
           onClick={() => fileInputRef.current?.click()}
           disabled={saving}
         >
@@ -159,8 +237,11 @@ export function AudioRecorder({ existingUrl, onReady, onDelete }: Props) {
           {state === "recording" && <span className="w-2.5 h-2.5 rounded-full bg-red-600 recording-dot" />}
           <span className="text-2xl font-mono tabular-nums">{mm}:{ss}</span>
         </div>
-        <p className="text-sm text-mist mb-5">{state === "recording" ? "Recording…" : "Paused"}</p>
-        <div className="flex items-center justify-center gap-4">
+        <p className="text-sm text-mist mb-1">{state === "recording" ? "Recording…" : "Paused"}</p>
+        {sttSupported && state === "recording" && (
+          <p className="text-xs text-clay mb-4">Transcribing as you speak — check the transcript below anytime.</p>
+        )}
+        <div className="flex items-center justify-center gap-4 mt-4">
           {state === "recording" ? (
             <button onClick={handlePause} className="w-14 h-14 rounded-full bg-sand text-ink text-xl flex items-center justify-center" aria-label="Pause">⏸</button>
           ) : (

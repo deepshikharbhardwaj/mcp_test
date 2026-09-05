@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getRepository } from "@/lib/db/repository";
@@ -38,6 +38,7 @@ export default function DayPage() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [providerName, setProviderName] = useState<string | null>(null);
+  const transcriptRef = useRef("");
 
   async function refresh() {
     const repo = getRepository();
@@ -54,6 +55,7 @@ export default function DayPage() {
     setDay(d ?? null);
     setRecordingUrl(recording ? await repo.getBlobUrl(recording.blobKey) : null);
     setTranscriptText(transcript?.rawText ?? "");
+    transcriptRef.current = transcript?.rawText ?? "";
     setEvents(evs);
     setBlog(blogDoc ?? null);
     if (blogDoc) setStyle(blogDoc.style);
@@ -80,14 +82,30 @@ export default function DayPage() {
     setRecordingUrl(null);
   }
 
+  /** Live speech-to-text chunks from the main record button, appended as they arrive. */
+  function handleTranscriptChunk(chunk: string) {
+    const next = transcriptRef.current.trim() ? `${transcriptRef.current.trim()} ${chunk}` : chunk;
+    transcriptRef.current = next;
+    setTranscriptText(next);
+    getRepository().saveTranscript(dayId, next, { source: "stt" });
+  }
+
+  /** Recording (and its live transcript) finished — go straight to the blog, matching "speak → story". */
+  function handleRecordingFinished() {
+    if (transcriptRef.current.trim()) {
+      handleGenerate(transcriptRef.current);
+    }
+  }
+
   async function handleTranscriptSave(text: string) {
+    transcriptRef.current = text;
     await getRepository().saveTranscript(dayId, text, { source: "manual" });
     const d = await getRepository().getDay(dayId);
     setDay(d ?? null);
   }
 
   async function handleGenerate(text: string) {
-    if (!day) return;
+    if (!day || generating) return;
     setGenerating(true);
     setError(null);
     try {
@@ -263,7 +281,13 @@ export default function DayPage() {
       </header>
 
       <div className="space-y-6">
-        <AudioRecorder existingUrl={recordingUrl} onReady={handleRecordingReady} onDelete={handleRecordingDelete} />
+        <AudioRecorder
+          existingUrl={recordingUrl}
+          onReady={handleRecordingReady}
+          onDelete={handleRecordingDelete}
+          onTranscriptChunk={handleTranscriptChunk}
+          onRecordingFinished={handleRecordingFinished}
+        />
 
         <TranscriptPanel
           initialText={transcriptText}

@@ -1,59 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
-// Minimal shape of the non-standard Web Speech API (webkitSpeechRecognition).
-// No official TS lib types ship for this, so it's declared locally.
-interface SpeechRecognitionResultLike {
-  isFinal: boolean;
-  0: { transcript: string };
-}
-interface SpeechRecognitionEventLike extends Event {
-  resultIndex: number;
-  results: ArrayLike<SpeechRecognitionResultLike>;
-}
-interface SpeechRecognitionLike extends EventTarget {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start(): void;
-  stop(): void;
-  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((e: Event) => void) | null;
-  onend: (() => void) | null;
-}
-
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
-
-function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}
-
-const LANGUAGES: Array<{ code: string; label: string }> = [
-  { code: "en-IN", label: "English" },
-  { code: "hi-IN", label: "Hindi" },
-  { code: "en-US", label: "English (US)" },
-];
+import {
+  getSpeechRecognitionCtor,
+  SPEECH_LANGUAGES,
+  type SpeechRecognitionLike,
+} from "@/lib/speech";
 
 interface Props {
   onAppend: (text: string) => void;
 }
 
 /**
- * Free, zero-config live speech-to-text using the browser's built-in
- * SpeechRecognition (Chrome/Edge only — feature-detected, hidden elsewhere).
- * Appends finalized phrases straight into the transcript as you speak.
- * This is a real STT path, distinct from the mock-vs-Anthropic AI writing
- * pipeline: it replaces "type the transcript" with "speak it", using
- * whatever language you pick below. Hinglish/code-switched speech works
- * best with "English" selected, since Chrome's en-IN model tolerates
- * Hindi words in the middle of English speech better than hi-IN tolerates
- * the reverse.
+ * Standalone "dictate without recording audio" option — free, zero-config,
+ * browser-only speech-to-text (Chrome/Edge). The main "Tell today's story"
+ * button (AudioRecorder) now does this automatically alongside recording;
+ * this stays as a fallback for when someone just wants to add a line of
+ * text by voice without starting a recording.
  */
 export function LiveTranscribe({ onAppend }: Props) {
   const [supported, setSupported] = useState(true);
@@ -123,7 +86,7 @@ export function LiveTranscribe({ onAppend }: Props) {
           listening ? "bg-red-600 text-white border-red-600" : "bg-white text-clay border-sand hover:border-clay/60"
         }`}
       >
-        {listening ? "⏹ Stop listening" : "🎤 Speak to transcribe"}
+        {listening ? "⏹ Stop listening" : "🎤 Or dictate a line here"}
       </button>
       {!listening && (
         <select
@@ -131,7 +94,7 @@ export function LiveTranscribe({ onAppend }: Props) {
           onChange={(e) => setLang(e.target.value)}
           className="text-xs bg-white border border-sand rounded-full px-2 py-2 text-mist"
         >
-          {LANGUAGES.map((l) => (
+          {SPEECH_LANGUAGES.map((l) => (
             <option key={l.code} value={l.code}>{l.label}</option>
           ))}
         </select>
