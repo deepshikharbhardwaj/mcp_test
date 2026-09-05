@@ -396,11 +396,16 @@ export class IndexedDBRepository implements JournalRepository {
   async clearImagePlacement(dayId: string, sectionId: string): Promise<BlogDocument> {
     const blog = await this.getBlog(dayId);
     if (!blog) throw new Error("Blog not found");
+    const removedImageId = blog.sections.find((s) => s.id === sectionId)?.imagePlacement?.imageId;
     const sections = blog.sections.map((s) =>
       s.id === sectionId && s.imagePlacement
         ? { ...s, imagePlacement: { ...s.imagePlacement, imageId: null } }
         : s
     );
+    if (removedImageId) {
+      const image = await dbGet<Image>(STORES.images, removedImageId);
+      if (image) await dbPut(STORES.images, { ...image, placedInBlog: false });
+    }
     return this.saveBlog(dayId, { ...blog, sections });
   }
 }

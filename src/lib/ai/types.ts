@@ -1,4 +1,5 @@
-import type { BlogStyle, JournalEvent } from "@/types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
+import type { TripStoryMode } from "@/prompts/generate-trip-story";
 
 export interface ExtractedEvents {
   detectedLanguage: "en" | "hi" | "hinglish" | "mixed" | "unknown";
@@ -14,6 +15,13 @@ export interface GeneratedSection {
 export interface GeneratedBlog {
   title: string;
   sections: GeneratedSection[];
+}
+
+export interface GeneratedTripStory {
+  title: string;
+  introduction: string;
+  sections: Array<{ heading: string; paragraphs: string[] }>;
+  conclusion: string;
 }
 
 /**
@@ -33,4 +41,10 @@ export interface AiProvider {
     currentHeading: string,
     currentParagraphs: string[]
   ): Promise<GeneratedSection>;
+  generateTripStory(
+    trip: Trip,
+    days: Day[],
+    blogs: Map<string, BlogDocument>,
+    mode: TripStoryMode
+  ): Promise<GeneratedTripStory>;
 }

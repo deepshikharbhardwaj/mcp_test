@@ -1,5 +1,6 @@
-import type { BlogStyle, JournalEvent } from "@/types";
-import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection } from "./types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
+import type { TripStoryMode } from "@/prompts/generate-trip-story";
+import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
 
 /**
  * Zero-config fallback provider. Runs entirely offline with simple
@@ -41,7 +42,7 @@ export class MockAiProvider implements AiProvider {
     const sections: GeneratedSection[] = groups.map((group) => {
       const heading = group.find((e) => e.location)?.location ?? group[0]!.activity;
       const paragraphs = [group.map((e) => formatEventSentence(e)).join(" ")];
-      const suggestionSource = group.find((e) => e.location)?.location;
+      const suggestionSource = group.find((e) => e.location)?.location ?? null;
       return {
         heading: toTitleCase(heading),
         paragraphs,
@@ -60,8 +61,33 @@ export class MockAiProvider implements AiProvider {
     _currentParagraphs: string[]
   ): Promise<GeneratedSection> {
     const paragraphs = [events.map((e) => formatEventSentence(e)).join(" ")];
-    const suggestionSource = events.find((e) => e.location)?.location;
+    const suggestionSource = events.find((e) => e.location)?.location ?? null;
     return { heading: currentHeading, paragraphs, imageSuggestion: suggestionSource };
+  }
+
+  async generateTripStory(
+    trip: Trip,
+    days: Day[],
+    blogs: Map<string, BlogDocument>,
+    _mode: TripStoryMode
+  ): Promise<GeneratedTripStory> {
+    const sections = days
+      .map((day) => {
+        const blog = blogs.get(day.id);
+        if (!blog) return null;
+        return {
+          heading: `Day ${day.dayNumber} — ${blog.title}`,
+          paragraphs: blog.sections.flatMap((s) => s.paragraphs),
+        };
+      })
+      .filter((s): s is { heading: string; paragraphs: string[] } => Boolean(s));
+
+    return {
+      title: trip.name,
+      introduction: `A journal of ${trip.name}, told across ${days.length} day${days.length === 1 ? "" : "s"}.`,
+      sections,
+      conclusion: "That's the story so far — more days can still be added.",
+    };
   }
 }
 

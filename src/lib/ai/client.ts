@@ -1,5 +1,6 @@
-import type { BlogStyle, JournalEvent } from "@/types";
-import type { ExtractedEvents, GeneratedBlog, GeneratedSection } from "./types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
+import type { TripStoryMode } from "@/prompts/generate-trip-story";
+import type { ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
 
 /** Browser-side helpers that call our own API routes (never the AI provider directly). */
 
@@ -32,4 +33,20 @@ export async function regenerateSection(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to regenerate section");
   return data.section as GeneratedSection;
+}
+
+export async function generateTripStory(
+  trip: Trip,
+  days: Day[],
+  blogsByDayId: Record<string, BlogDocument>,
+  mode: TripStoryMode
+): Promise<GeneratedTripStory> {
+  const res = await fetch("/api/ai/trip-story", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ trip, days, blogsByDayId, mode }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Failed to generate trip story");
+  return data.story as GeneratedTripStory;
 }

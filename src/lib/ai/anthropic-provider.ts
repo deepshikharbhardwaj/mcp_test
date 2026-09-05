@@ -1,4 +1,4 @@
-import type { BlogStyle, JournalEvent } from "@/types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
 import {
   EXTRACT_EVENTS_SYSTEM_PROMPT,
   buildExtractEventsUserPrompt,
@@ -11,7 +11,12 @@ import {
   REGENERATE_SECTION_SYSTEM_PROMPT,
   buildRegenerateSectionUserPrompt,
 } from "@/prompts/regenerate-section";
-import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection } from "./types";
+import {
+  GENERATE_TRIP_STORY_SYSTEM_PROMPT,
+  buildGenerateTripStoryUserPrompt,
+  type TripStoryMode,
+} from "@/prompts/generate-trip-story";
+import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -80,6 +85,19 @@ export class AnthropicAiProvider implements AiProvider {
       buildRegenerateSectionUserPrompt(events, style, currentHeading, currentParagraphs)
     );
     return result as GeneratedSection;
+  }
+
+  async generateTripStory(
+    trip: Trip,
+    days: Day[],
+    blogs: Map<string, BlogDocument>,
+    mode: TripStoryMode
+  ): Promise<GeneratedTripStory> {
+    const result = await this.complete(
+      GENERATE_TRIP_STORY_SYSTEM_PROMPT,
+      buildGenerateTripStoryUserPrompt(trip, days, blogs, mode)
+    );
+    return result as GeneratedTripStory;
   }
 }
 
