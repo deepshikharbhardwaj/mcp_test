@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background-color: #faf8f5;
+  color: #1c1a17;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Comfortable minimum touch targets, per the mobile-first requirement. */
+button, a {
+  touch-action: manipulation;
+}
+
+.editorial-prose p {
+  line-height: 1.8;
+  margin-bottom: 1.25rem;
+}
+
+.editorial-prose p:last-child {
+  margin-bottom: 0;
+}
+
+::selection {
+  background-color: #e8e0d4;
+}
+
+textarea, input {
+  outline: none;
+}
+
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.recording-dot {
+  animation: pulse-rec 1.4s ease-in-out infinite;
+}
