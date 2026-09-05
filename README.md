@@ -34,13 +34,20 @@ like a calm, private, premium journal for one person.
 - Trip-level "Generate Complete Trip Story" across all days.
 - Markdown + HTML export for a day's blog and for the trip story.
 - Installable PWA (manifest + icons); mobile-first responsive layout.
+- **Free, zero-config live speech-to-text** (`src/components/LiveTranscribe.tsx`)
+  using the browser's built-in `SpeechRecognition` (Chrome/Edge). Tap "🎤 Speak
+  to transcribe" on the day page and it appends recognized speech straight
+  into the transcript as you talk — no API key, no server round trip. It's
+  feature-detected and simply hides itself in unsupported browsers (Safari,
+  Firefox), where typing/pasting the transcript still works exactly as
+  before.
 
 ### Not yet wired up (by design — see phased plan below)
 
 - Supabase (auth / Postgres / Storage) — schema is ready in
   `supabase/migrations/0001_init.sql`, but the app currently uses IndexedDB.
-- Real speech-to-text — you type/paste the transcript for now (this was an
-  explicit, documented placeholder for the first version).
+- Server-side speech-to-text (e.g. Whisper) for higher accuracy than the
+  browser's built-in recognizer, and for browsers that don't support it at all.
 - GitHub archival/versioning of saved days.
 - PDF/DOCX/EPUB export, full offline sync, section drag-reordering.
 
