@@ -1,14 +1,21 @@
 -- Travel Journal — initial schema.
 --
--- NOT YET WIRED UP in V1 (the app currently persists to browser IndexedDB —
--- see src/lib/db/repository.ts). This migration exists so the future
--- SupabaseRepository implementation has a schema ready that mirrors
--- src/types/index.ts exactly, and so Row Level Security is designed in from
--- the start rather than bolted on later.
+-- Every table carries its own `user_id`, denormalized rather than requiring
+-- a join up through trips → days for Row Level Security. For a personal,
+-- single-account-per-user app this trades strict normalization for much
+-- simpler (and faster) RLS policies and queries — a deliberate choice, not
+-- an oversight.
 --
--- Binary payloads (audio, photos) are NOT stored here — they belong in
+-- The blog's nested content (three language variants, each with sections,
+-- plus shared image placements) is stored as one `data jsonb` column on
+-- `blog_documents` rather than four more relational tables — it mirrors
+-- `BlogDocument` in src/types/index.ts field-for-field and is only ever
+-- read/written as a whole document, so JSONB is the right fit, not a
+-- shortcut.
+--
+-- Binary payloads (audio, photos) are NOT stored here — they live in
 -- Supabase Storage buckets ("recordings", "images"), private by default,
--- with paths like trips/{tripId}/days/{dayId}/audio/... per the README.
+-- with paths like {userId}/{dayId}/{uuid}.{ext}. See README "Supabase setup".
 
 create extension if not exists "pgcrypto";
 
@@ -26,6 +33,7 @@ create table trips (
 
 create table days (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   trip_id uuid not null references trips(id) on delete cascade,
   day_number int not null,
   date date not null,
@@ -38,8 +46,9 @@ create table days (
 
 create table recordings (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   day_id uuid not null references days(id) on delete cascade,
-  storage_path text not null, -- Supabase Storage object path
+  storage_path text not null, -- Supabase Storage object path, "recordings" bucket
   mime_type text not null,
   duration_seconds int,
   source text not null check (source in ('recorded', 'uploaded')),
@@ -48,6 +57,7 @@ create table recordings (
 
 create table transcripts (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   day_id uuid not null references days(id) on delete cascade,
   recording_id uuid references recordings(id) on delete set null,
   raw_text text not null,
@@ -59,6 +69,7 @@ create table transcripts (
 
 create table events (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   day_id uuid not null references days(id) on delete cascade,
   sequence int not null,
   time text,
@@ -68,54 +79,11 @@ create table events (
   is_ambiguous boolean not null default false
 );
 
--- A blog document holds three language editions (variants) generated
--- together in one pass, sharing one section structure. `blog_sections` is
--- the shared "slot" (order + image placement); `blog_document_variants`
--- and `blog_section_variants` hold the per-language text. This is what
--- lets the language toggle switch instantly with no regeneration, and
--- keeps a photo placed against one slot meaningful in all three languages.
-
-create table blog_documents (
-  id uuid primary key default gen_random_uuid(),
-  day_id uuid not null references days(id) on delete cascade,
-  style text not null default 'professional_travel'
-    check (style in ('professional_travel', 'personal_warm', 'editorial', 'minimal')),
-  active_language text not null default 'en'
-    check (active_language in ('en', 'hi', 'hinglish')),
-  version int not null default 1,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table blog_document_variants (
-  id uuid primary key default gen_random_uuid(),
-  blog_id uuid not null references blog_documents(id) on delete cascade,
-  language text not null check (language in ('en', 'hi', 'hinglish')),
-  title text not null,
-  title_user_edited boolean not null default false,
-  unique (blog_id, language)
-);
-
-create table blog_sections (
-  id uuid primary key default gen_random_uuid(),
-  blog_id uuid not null references blog_documents(id) on delete cascade,
-  "order" int not null
-);
-
-create table blog_section_variants (
-  id uuid primary key default gen_random_uuid(),
-  section_id uuid not null references blog_sections(id) on delete cascade,
-  language text not null check (language in ('en', 'hi', 'hinglish')),
-  heading text not null,
-  paragraphs jsonb not null default '[]',
-  user_edited boolean not null default false,
-  unique (section_id, language)
-);
-
 create table images (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   day_id uuid not null references days(id) on delete cascade,
-  storage_path text not null,
+  storage_path text not null, -- "images" bucket
   mime_type text not null,
   caption text,
   width int,
@@ -124,22 +92,38 @@ create table images (
   created_at timestamptz not null default now()
 );
 
-create table image_placements (
+-- One row per day. `data` holds { variants: {en,hi,hinglish}, imagePlacements }
+-- exactly matching BlogDocument in src/types/index.ts.
+create table blog_documents (
   id uuid primary key default gen_random_uuid(),
-  section_id uuid not null references blog_sections(id) on delete cascade,
-  image_id uuid references images(id) on delete set null,
-  suggestion text not null,
-  caption text,
-  unique (section_id)
+  user_id uuid not null references auth.users(id) on delete cascade,
+  day_id uuid not null references days(id) on delete cascade unique,
+  style text not null default 'professional_travel'
+    check (style in ('professional_travel', 'personal_warm', 'editorial', 'minimal')),
+  active_language text not null default 'en'
+    check (active_language in ('en', 'hi', 'hinglish')),
+  data jsonb not null,
+  version int not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table exports (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   trip_id uuid not null references trips(id) on delete cascade,
   format text not null check (format in ('markdown', 'html', 'pdf', 'docx', 'epub', 'archive_zip')),
   storage_path text,
   created_at timestamptz not null default now()
 );
+
+-- indexes for the lookups the repository actually does ------------------
+
+create index days_trip_id_idx on days(trip_id);
+create index recordings_day_id_idx on recordings(day_id);
+create index transcripts_day_id_idx on transcripts(day_id);
+create index events_day_id_idx on events(day_id);
+create index images_day_id_idx on images(day_id);
 
 -- updated_at maintenance -----------------------------------------------
 
@@ -160,7 +144,7 @@ create trigger blog_documents_set_updated_at before update on blog_documents
   for each row execute function set_updated_at();
 
 -- Row Level Security ------------------------------------------------------
--- Single-user today, but modeled as proper per-row ownership from day one so
+-- Single-user today, but every row is scoped to auth.uid() from day one, so
 -- nothing needs to change if this ever supports more than one account.
 
 alter table trips enable row level security;
@@ -168,101 +152,35 @@ alter table days enable row level security;
 alter table recordings enable row level security;
 alter table transcripts enable row level security;
 alter table events enable row level security;
-alter table blog_documents enable row level security;
-alter table blog_document_variants enable row level security;
-alter table blog_sections enable row level security;
-alter table blog_section_variants enable row level security;
 alter table images enable row level security;
-alter table image_placements enable row level security;
+alter table blog_documents enable row level security;
 alter table exports enable row level security;
 
 create policy "trips owned by user" on trips
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "days owned by user" on days
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "recordings owned by user" on recordings
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "transcripts owned by user" on transcripts
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "events owned by user" on events
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "images owned by user" on images
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "blog_documents owned by user" on blog_documents
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "exports owned by user" on exports
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-create policy "days via owned trip" on days
-  for all using (exists (select 1 from trips where trips.id = days.trip_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from trips where trips.id = days.trip_id and trips.user_id = auth.uid()));
+-- Storage policies ---------------------------------------------------------
+-- Object paths are expected to start with the owning user's id, e.g.
+-- "{userId}/{dayId}/{uuid}.jpg" — these policies enforce that shape.
 
-create policy "recordings via owned day" on recordings
-  for all using (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = recordings.day_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = recordings.day_id and trips.user_id = auth.uid()));
+create policy "recordings bucket owned by user" on storage.objects
+  for all using (bucket_id = 'recordings' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'recordings' and (storage.foldername(name))[1] = auth.uid()::text);
 
-create policy "transcripts via owned day" on transcripts
-  for all using (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = transcripts.day_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = transcripts.day_id and trips.user_id = auth.uid()));
-
-create policy "events via owned day" on events
-  for all using (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = events.day_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = events.day_id and trips.user_id = auth.uid()));
-
-create policy "blog_documents via owned day" on blog_documents
-  for all using (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = blog_documents.day_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = blog_documents.day_id and trips.user_id = auth.uid()));
-
-create policy "blog_document_variants via owned blog" on blog_document_variants
-  for all using (exists (
-    select 1 from blog_documents
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_documents.id = blog_document_variants.blog_id and trips.user_id = auth.uid()
-  ))
-  with check (exists (
-    select 1 from blog_documents
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_documents.id = blog_document_variants.blog_id and trips.user_id = auth.uid()
-  ));
-
-create policy "blog_sections via owned blog" on blog_sections
-  for all using (exists (
-    select 1 from blog_documents
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_documents.id = blog_sections.blog_id and trips.user_id = auth.uid()
-  ))
-  with check (exists (
-    select 1 from blog_documents
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_documents.id = blog_sections.blog_id and trips.user_id = auth.uid()
-  ));
-
-create policy "blog_section_variants via owned section" on blog_section_variants
-  for all using (exists (
-    select 1 from blog_sections
-    join blog_documents on blog_documents.id = blog_sections.blog_id
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_sections.id = blog_section_variants.section_id and trips.user_id = auth.uid()
-  ))
-  with check (exists (
-    select 1 from blog_sections
-    join blog_documents on blog_documents.id = blog_sections.blog_id
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_sections.id = blog_section_variants.section_id and trips.user_id = auth.uid()
-  ));
-
-create policy "images via owned day" on images
-  for all using (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = images.day_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = images.day_id and trips.user_id = auth.uid()));
-
-create policy "image_placements via owned section" on image_placements
-  for all using (exists (
-    select 1 from blog_sections
-    join blog_documents on blog_documents.id = blog_sections.blog_id
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_sections.id = image_placements.section_id and trips.user_id = auth.uid()
-  ))
-  with check (exists (
-    select 1 from blog_sections
-    join blog_documents on blog_documents.id = blog_sections.blog_id
-    join days on days.id = blog_documents.day_id
-    join trips on trips.id = days.trip_id
-    where blog_sections.id = image_placements.section_id and trips.user_id = auth.uid()
-  ));
-
-create policy "exports via owned trip" on exports
-  for all using (exists (select 1 from trips where trips.id = exports.trip_id and trips.user_id = auth.uid()))
-  with check (exists (select 1 from trips where trips.id = exports.trip_id and trips.user_id = auth.uid()));
+create policy "images bucket owned by user" on storage.objects
+  for all using (bucket_id = 'images' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'images' and (storage.foldername(name))[1] = auth.uid()::text);

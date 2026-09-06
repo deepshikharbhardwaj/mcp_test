@@ -25,6 +25,8 @@ import {
   dbGetAllByIndex,
   dbPut,
 } from "./indexeddb";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { SupabaseRepository } from "./supabase-repository";
 
 /**
  * The storage-agnostic contract the rest of the app codes against.
@@ -456,9 +458,19 @@ function readImageDimensions(blob: Blob): Promise<{ width: number; height: numbe
 
 let repositoryInstance: JournalRepository | null = null;
 
+/**
+ * Picks the storage backend once, the same way `getAiProvider()` picks an AI
+ * provider: Supabase if configured (`NEXT_PUBLIC_SUPABASE_URL` +
+ * `NEXT_PUBLIC_SUPABASE_ANON_KEY`), otherwise the zero-config local
+ * IndexedDB store. Nothing else in the app needs to know which is active.
+ */
 export function getRepository(): JournalRepository {
   if (!repositoryInstance) {
-    repositoryInstance = new IndexedDBRepository();
+    if (isSupabaseConfigured()) {
+      repositoryInstance = new SupabaseRepository();
+    } else {
+      repositoryInstance = new IndexedDBRepository();
+    }
   }
   return repositoryInstance;
 }

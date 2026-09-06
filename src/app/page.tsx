@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getRepository } from "@/lib/db/repository";
+import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { TripSummary } from "@/types";
 import { TripCard } from "@/components/TripCard";
 import { NewTripModal } from "@/components/NewTripModal";
@@ -31,9 +32,19 @@ export default function DashboardPage() {
 
   return (
     <main className="max-w-2xl mx-auto px-5 pt-10 pb-24 sm:pt-16">
-      <header className="mb-8">
-        <p className="text-xs tracking-[0.3em] text-clay font-medium mb-1">PRIVATE JOURNAL</p>
-        <h1 className="text-3xl font-serif font-semibold text-ink">My Travel Journal</h1>
+      <header className="mb-8 flex items-start justify-between">
+        <div>
+          <p className="text-xs tracking-[0.3em] text-clay font-medium mb-1">PRIVATE JOURNAL</p>
+          <h1 className="text-3xl font-serif font-semibold text-ink">My Travel Journal</h1>
+        </div>
+        {isSupabaseConfigured() && (
+          <button
+            onClick={() => getSupabaseClient().auth.signOut()}
+            className="text-xs text-mist hover:text-ink mt-2"
+          >
+            Sign out
+          </button>
+        )}
       </header>
 
       <Button size="lg" fullWidth onClick={() => setShowNewTrip(true)} className="mb-8">
