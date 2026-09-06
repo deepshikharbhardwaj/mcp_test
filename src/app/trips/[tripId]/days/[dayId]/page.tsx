@@ -27,7 +27,7 @@ export default function DayPage() {
   const [events, setEvents] = useState<JournalEvent[]>([]);
   const [blog, setBlog] = useState<BlogDocument | null>(null);
   const [style, setStyle] = useState<BlogStyle>("professional_travel");
-  const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("en");
+  const [activeLanguage, setActiveLanguage] = useState<OutputLanguage>("en");
   const [images, setImages] = useState<JournalImage[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
@@ -58,10 +58,14 @@ export default function DayPage() {
     setTranscriptText(transcript?.rawText ?? "");
     transcriptRef.current = transcript?.rawText ?? "";
     setEvents(evs);
-    setBlog(blogDoc ?? null);
-    if (blogDoc) {
-      setStyle(blogDoc.style);
-      setOutputLanguage(blogDoc.outputLanguage ?? "en");
+    // Guards against blog documents saved before the multi-language rewrite
+    // (an older shape without `variants`/`imagePlacements`) — treat those as
+    // absent rather than crashing; regenerating produces the current shape.
+    const validBlog = blogDoc && blogDoc.variants ? blogDoc : undefined;
+    setBlog(validBlog ?? null);
+    if (validBlog) {
+      setStyle(validBlog.style);
+      setActiveLanguage(validBlog.activeLanguage ?? "en");
     }
     setImages(imgs);
     const urls: Record<string, string> = {};
@@ -108,12 +112,13 @@ export default function DayPage() {
     setDay(d ?? null);
   }
 
+  /** Generates English, Hindi, and Hinglish together — switching the language toggle afterward is instant, no re-generation needed. */
   async function handleGenerate(text: string) {
     if (!day || generating) return;
     setGenerating(true);
     setError(null);
     try {
-      const result = await processDayTranscript(text, day.date, style, outputLanguage);
+      const result = await processDayTranscript(text, day.date, style);
       setProviderName(result.providerName);
       const repo = getRepository();
 
@@ -124,7 +129,7 @@ export default function DayPage() {
       }));
       await repo.saveEvents(dayId, eventsWithIds);
 
-      const blogDoc = buildBlogDocument(dayId, result.blog, style, outputLanguage);
+      const blogDoc = buildBlogDocument(dayId, result.english, result.translations, style, activeLanguage);
       const saved = await repo.saveBlog(dayId, blogDoc);
 
       await repo.saveTranscript(dayId, text, { detectedLanguage: result.detectedLanguage, source: "manual" });
@@ -149,51 +154,45 @@ export default function DayPage() {
     }
   }
 
+  /** Purely a display switch — English/Hindi/Hinglish were all generated together, so this never calls the AI. */
   async function handleLanguageChange(next: OutputLanguage) {
-    setOutputLanguage(next);
+    setActiveLanguage(next);
     if (blog) {
       const repo = getRepository();
-      const saved = await repo.saveBlog(dayId, { ...blog, outputLanguage: next });
+      const saved = await repo.saveBlog(dayId, { ...blog, activeLanguage: next });
       setBlog(saved);
     }
   }
 
   async function handleTitleChange(title: string) {
-    if (!blog) return;
-    const saved = await getRepository().saveBlog(dayId, { ...blog, title });
+    const saved = await getRepository().updateBlogTitle(dayId, activeLanguage, title);
     setBlog(saved);
   }
 
   async function handleSectionTextChange(sectionId: string, heading: string, paragraphs: string[]) {
-    const saved = await getRepository().updateBlogSection(dayId, sectionId, { heading, paragraphs });
+    const saved = await getRepository().updateBlogSection(dayId, activeLanguage, sectionId, { heading, paragraphs });
     setBlog(saved);
   }
 
+  /** Regenerates one section in whichever language is currently active — the other two languages are left untouched. */
   async function handleRegenerateSection(sectionId: string) {
     if (!blog) return;
-    const section = blog.sections.find((s) => s.id === sectionId);
+    const variant = blog.variants[activeLanguage];
+    const section = variant.sections.find((s) => s.id === sectionId);
     if (!section) return;
     setRegeneratingSectionId(sectionId);
     setError(null);
     try {
-      const result = await apiRegenerateSection(events, style, outputLanguage, section.heading, section.paragraphs);
+      const result = await apiRegenerateSection(events, style, activeLanguage, section.heading, section.paragraphs);
       const repo = getRepository();
-      const sections = blog.sections.map((s) =>
-        s.id === sectionId
-          ? {
-              ...s,
-              heading: result.heading,
-              paragraphs: result.paragraphs,
-              userEdited: false,
-              imagePlacement: result.imageSuggestion
-                ? s.imagePlacement
-                  ? { ...s.imagePlacement, suggestion: result.imageSuggestion }
-                  : { id: newId(), sectionId: s.id, imageId: null, suggestion: result.imageSuggestion, caption: null }
-                : s.imagePlacement,
-            }
-          : s
+      const sections = variant.sections.map((s) =>
+        s.id === sectionId ? { ...s, heading: result.heading, paragraphs: result.paragraphs, userEdited: false } : s
       );
-      const saved = await repo.saveBlog(dayId, { ...blog, sections });
+      const variants = { ...blog.variants, [activeLanguage]: { ...variant, sections } };
+      const imagePlacements = result.imageSuggestion
+        ? blog.imagePlacements.map((p) => (p.sectionId === sectionId ? { ...p, suggestion: result.imageSuggestion! } : p))
+        : blog.imagePlacements;
+      const saved = await repo.saveBlog(dayId, { ...blog, variants, imagePlacements });
       setBlog(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't regenerate that section — nothing was changed.");
@@ -202,13 +201,14 @@ export default function DayPage() {
     }
   }
 
+  /** Full regeneration — refreshes all three languages together from the current transcript. */
   async function handleRegenerateAll() {
     if (!day || !transcriptText.trim()) return;
     setRegeneratingAll(true);
     setError(null);
     try {
-      const result = await processDayTranscript(transcriptText, day.date, style, outputLanguage);
-      const blogDoc = buildBlogDocument(dayId, result.blog, style, outputLanguage);
+      const result = await processDayTranscript(transcriptText, day.date, style);
+      const blogDoc = buildBlogDocument(dayId, result.english, result.translations, style, activeLanguage);
       const saved = await getRepository().saveBlog(dayId, blogDoc);
       setBlog(saved);
     } catch (err) {
@@ -283,6 +283,8 @@ export default function DayPage() {
     );
   }
 
+  const activeVariant = blog?.variants[activeLanguage];
+
   return (
     <main className="max-w-2xl mx-auto px-5 pt-8 pb-32 sm:pt-14">
       <Link href={`/trips/${tripId}`} className="text-sm text-mist hover:text-ink">← {trip.name}</Link>
@@ -326,7 +328,7 @@ export default function DayPage() {
 
         <EventsList events={events} />
 
-        {blog && (
+        {blog && activeVariant && (
           <>
             {providerName === "mock" && (
               <p className="text-xs text-mist text-center -mb-2">
@@ -334,9 +336,10 @@ export default function DayPage() {
               </p>
             )}
             <BlogEditor
-              blog={blog}
+              variant={activeVariant}
+              imagePlacements={blog.imagePlacements}
               style={style}
-              outputLanguage={outputLanguage}
+              activeLanguage={activeLanguage}
               images={images}
               imageUrls={imageUrls}
               regeneratingSectionId={regeneratingSectionId}
@@ -352,10 +355,10 @@ export default function DayPage() {
               onCaptionChange={handleImageCaptionChange}
             />
             <div className="flex justify-center gap-4 text-xs text-mist">
-              <button className="hover:text-clay" onClick={() => downloadTextFile(`${day.dayNumber}-${day.date}.md`, dayBlogToMarkdown(blog), "text/markdown")}>
+              <button className="hover:text-clay" onClick={() => downloadTextFile(`${day.dayNumber}-${day.date}-${activeLanguage}.md`, dayBlogToMarkdown(activeVariant, blog.imagePlacements), "text/markdown")}>
                 Export Markdown
               </button>
-              <button className="hover:text-clay" onClick={() => downloadTextFile(`${day.dayNumber}-${day.date}.html`, dayBlogToHtml(blog, trip.name), "text/html")}>
+              <button className="hover:text-clay" onClick={() => downloadTextFile(`${day.dayNumber}-${day.date}-${activeLanguage}.html`, dayBlogToHtml(activeVariant, blog.imagePlacements, trip.name), "text/html")}>
                 Export HTML
               </button>
             </div>
@@ -367,7 +370,7 @@ export default function DayPage() {
 
       <div className="fixed bottom-0 left-0 right-0 bg-paper/95 backdrop-blur border-t border-sand px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <span className="text-sm text-mist">{savedFlash ? "Saved ✓" : " "}</span>
+          <span className="text-sm text-mist">{savedFlash ? "Saved ✓" : " "}</span>
           <Button onClick={handleSaveDay} disabled={saving}>{saving ? "Saving…" : "💾 Save"}</Button>
         </div>
       </div>

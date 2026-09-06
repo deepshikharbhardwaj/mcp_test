@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BlogDocument, BlogStyle, Image as JournalImage, OutputLanguage } from "@/types";
+import type { BlogLanguageVariant, BlogStyle, Image as JournalImage, ImagePlacement, OutputLanguage } from "@/types";
 import { StyleSelector } from "./StyleSelector";
 import { LanguageToggle } from "./LanguageToggle";
 import { ImagePlaceholderBlock } from "./ImagePlaceholder";
 import { Button } from "./Button";
 
 interface Props {
-  blog: BlogDocument;
+  variant: BlogLanguageVariant;
+  imagePlacements: ImagePlacement[];
   style: BlogStyle;
-  outputLanguage: OutputLanguage;
+  activeLanguage: OutputLanguage;
   images: JournalImage[];
   imageUrls: Record<string, string>;
   regeneratingSectionId: string | null;
@@ -27,21 +28,22 @@ interface Props {
 }
 
 export function BlogEditor({
-  blog, style, outputLanguage, images, imageUrls, regeneratingSectionId, regeneratingAll,
+  variant, imagePlacements, style, activeLanguage, images, imageUrls, regeneratingSectionId, regeneratingAll,
   onStyleChange, onLanguageChange, onTitleChange, onSectionTextChange, onRegenerateSection,
   onRegenerateAll, onImageUpload, onImageRemove, onCaptionChange,
 }: Props) {
-  const [title, setTitle] = useState(blog.title);
-  useEffect(() => setTitle(blog.title), [blog.title]);
+  const [title, setTitle] = useState(variant.title);
+  useEffect(() => setTitle(variant.title), [variant.title]);
 
   const imageById = new Map(images.map((i) => [i.id, i]));
+  const placementBySectionId = new Map(imagePlacements.map((p) => [p.sectionId, p]));
 
   return (
     <div>
       <div className="flex items-start justify-between mb-4 flex-wrap gap-4">
         <div className="flex flex-col gap-3">
           <StyleSelector value={style} onChange={onStyleChange} />
-          <LanguageToggle value={outputLanguage} onChange={onLanguageChange} />
+          <LanguageToggle value={activeLanguage} onChange={onLanguageChange} />
         </div>
         <Button variant="secondary" size="sm" onClick={onRegenerateAll} disabled={regeneratingAll}>
           {regeneratingAll ? "Regenerating…" : "↻ Regenerate entire blog"}
@@ -50,15 +52,17 @@ export function BlogEditor({
 
       <article className="relative bg-white border border-sand rounded-2xl px-6 py-8 sm:px-10 sm:py-12 max-w-editorial mx-auto shadow-card overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-accent/70 via-clay/40 to-transparent" />
-        <input
+        <p className="text-[11px] tracking-wide text-mist mb-3">✏️ tap any text below to edit it</p>
+        <EditableField
+          as="input"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => onTitleChange(title)}
-          className="w-full text-3xl font-serif font-semibold text-ink mb-8 bg-transparent border-none focus:ring-0 p-0"
+          onChange={setTitle}
+          onCommit={() => onTitleChange(title)}
+          className="w-full text-3xl font-serif font-semibold text-ink mb-8"
         />
 
         <div className="editorial-prose">
-          {blog.sections.map((section) => (
+          {variant.sections.map((section) => (
             <SectionBlock
               key={section.id}
               heading={section.heading}
@@ -68,15 +72,23 @@ export function BlogEditor({
               onTextChange={(heading, paragraphs) => onSectionTextChange(section.id, heading, paragraphs)}
               onRegenerate={() => onRegenerateSection(section.id)}
             >
-              {section.imagePlacement && (
+              {placementBySectionId.get(section.id) && (
                 <ImagePlaceholderBlock
-                  placement={section.imagePlacement}
-                  image={section.imagePlacement.imageId ? imageById.get(section.imagePlacement.imageId) ?? null : null}
-                  imageUrl={section.imagePlacement.imageId ? imageUrls[section.imagePlacement.imageId] ?? null : null}
+                  placement={placementBySectionId.get(section.id)!}
+                  image={
+                    placementBySectionId.get(section.id)!.imageId
+                      ? imageById.get(placementBySectionId.get(section.id)!.imageId!) ?? null
+                      : null
+                  }
+                  imageUrl={
+                    placementBySectionId.get(section.id)!.imageId
+                      ? imageUrls[placementBySectionId.get(section.id)!.imageId!] ?? null
+                      : null
+                  }
                   onUpload={(file) => onImageUpload(section.id, file)}
                   onRemove={() => onImageRemove(section.id)}
                   onCaptionChange={(caption) => {
-                    const imageId = section.imagePlacement?.imageId;
+                    const imageId = placementBySectionId.get(section.id)?.imageId;
                     return imageId ? onCaptionChange(imageId, caption) : Promise.resolve();
                   }}
                 />
@@ -85,6 +97,52 @@ export function BlogEditor({
           ))}
         </div>
       </article>
+    </div>
+  );
+}
+
+/** A text field with a visible pencil affordance and hover/focus ring, so it reads as editable rather than static text. */
+function EditableField({
+  as, value, onChange, onCommit, className, rows,
+}: {
+  as: "input" | "textarea";
+  value: string;
+  onChange: (v: string) => void;
+  onCommit: () => void;
+  className?: string;
+  rows?: number;
+}) {
+  const [focused, setFocused] = useState(false);
+  const shared =
+    "bg-transparent border-none focus:ring-0 p-0 rounded-md -mx-2 px-2 transition-colors hover:bg-sand/30 focus:bg-sand/40";
+
+  return (
+    <div className="relative group/field">
+      {as === "input" ? (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); onCommit(); }}
+          className={`${shared} ${className ?? ""}`}
+        />
+      ) : (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); onCommit(); }}
+          rows={rows}
+          className={`${shared} resize-none ${className ?? ""}`}
+        />
+      )}
+      <span
+        className={`pointer-events-none absolute -right-1 top-1 text-xs text-clay transition-opacity ${
+          focused ? "opacity-0" : "opacity-0 group-hover/field:opacity-70"
+        }`}
+      >
+        ✏️
+      </span>
     </div>
   );
 }
@@ -117,12 +175,15 @@ function SectionBlock({
   return (
     <section className="mb-2 group">
       <div className="flex items-center justify-between gap-3 mt-8 mb-3">
-        <input
-          value={localHeading}
-          onChange={(e) => setLocalHeading(e.target.value)}
-          onBlur={commit}
-          className="text-xl font-serif font-semibold text-ink bg-transparent border-none focus:ring-0 p-0 flex-1"
-        />
+        <div className="flex-1 min-w-0">
+          <EditableField
+            as="input"
+            value={localHeading}
+            onChange={setLocalHeading}
+            onCommit={commit}
+            className="text-xl font-serif font-semibold text-ink w-full"
+          />
+        </div>
         <button
           onClick={onRegenerate}
           disabled={regenerating}
@@ -133,12 +194,13 @@ function SectionBlock({
         </button>
       </div>
       {userEdited && <p className="text-[11px] text-mist mb-2 -mt-2">edited</p>}
-      <textarea
+      <EditableField
+        as="textarea"
         value={localBody}
-        onChange={(e) => setLocalBody(e.target.value)}
-        onBlur={commit}
+        onChange={setLocalBody}
+        onCommit={commit}
         rows={Math.max(3, localBody.split("\n").length)}
-        className="w-full text-[16px] leading-8 text-ink bg-transparent border-none focus:ring-0 p-0 resize-none"
+        className="w-full text-[16px] leading-8 text-ink"
       />
       {children}
     </section>

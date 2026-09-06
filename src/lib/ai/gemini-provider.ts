@@ -8,6 +8,10 @@ import {
   buildGenerateBlogUserPrompt,
 } from "@/prompts/generate-blog";
 import {
+  TRANSLATE_BLOG_SYSTEM_PROMPT,
+  buildTranslateBlogUserPrompt,
+} from "@/prompts/translate-blog";
+import {
   REGENERATE_SECTION_SYSTEM_PROMPT,
   buildRegenerateSectionUserPrompt,
 } from "@/prompts/regenerate-section";
@@ -16,7 +20,7 @@ import {
   buildGenerateTripStoryUserPrompt,
   type TripStoryMode,
 } from "@/prompts/generate-trip-story";
-import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
+import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory, TranslatedBlog } from "./types";
 
 const DEFAULT_MODEL = "gemini-3.6-flash";
 
@@ -75,12 +79,26 @@ export class GeminiAiProvider implements AiProvider {
     return result as ExtractedEvents;
   }
 
-  async generateBlog(events: JournalEvent[], style: BlogStyle, outputLanguage: OutputLanguage, dayDate: string): Promise<GeneratedBlog> {
+  async generateBlog(events: JournalEvent[], style: BlogStyle, dayDate: string): Promise<GeneratedBlog> {
     const result = await this.complete(
       GENERATE_BLOG_SYSTEM_PROMPT,
-      buildGenerateBlogUserPrompt(events, style, outputLanguage, dayDate)
+      buildGenerateBlogUserPrompt(events, style, dayDate)
     );
     return result as GeneratedBlog;
+  }
+
+  async translateBlog(
+    englishTitle: string,
+    englishSections: Array<{ heading: string; paragraphs: string[] }>,
+    events: JournalEvent[],
+    style: BlogStyle,
+    outputLanguage: OutputLanguage
+  ): Promise<TranslatedBlog> {
+    const result = await this.complete(
+      TRANSLATE_BLOG_SYSTEM_PROMPT,
+      buildTranslateBlogUserPrompt(englishTitle, englishSections, events, style, outputLanguage)
+    );
+    return result as TranslatedBlog;
   }
 
   async regenerateSection(

@@ -26,27 +26,46 @@ like a calm, private, premium journal for one person.
   single `JournalRepository` interface (`src/lib/db/repository.ts`). Nothing
   is lost on refresh. This is intentional: it lets the whole product be built
   and used today, before any backend account/credentials exist.
-- **Real AI pipeline, provider-swappable.** If you set `ANTHROPIC_API_KEY`,
-  event extraction and blog writing use Claude for real, following the
-  strict anti-hallucination prompts in `src/prompts/`. With no key set, an
-  offline mock provider runs instead (see [AI providers](#ai-providers)) so
-  the whole app works with zero configuration.
+- **Real AI pipeline, provider-swappable.** If you set `GEMINI_API_KEY` or
+  `ANTHROPIC_API_KEY`, event extraction and blog writing use a real model,
+  following the strict anti-hallucination prompts in `src/prompts/`. With no
+  key set, an offline mock provider runs instead (see
+  [AI providers](#ai-providers)) so the whole app works with zero
+  configuration.
+- **All three languages generated together.** One "Generate Story" (or
+  "Regenerate entire blog") produces English, Hindi, and Hinglish editions
+  in the same pass — an English structural pass decides section count,
+  headings, and photo slots, then Hindi/Hinglish are translated from that
+  same structure in parallel (`src/prompts/translate-blog.ts`). The language
+  toggle just switches which one you're looking at; it never calls the AI.
+  Photo placements stay aligned across all three since they share the same
+  underlying section ids. "Regenerate this section" only touches whichever
+  language you're currently viewing.
+- **Catchy, story-driven writing.** The generation prompt explicitly asks
+  for magazine-style headlines (not restated location names) and a
+  narrative throughline connecting events, rather than a flat "then this
+  happened" recap — still bound by the same anti-hallucination rules.
+  Hinglish specifically aims for a Gen-Z-cool, English-forward voice with
+  natural Hindi seasoning, not a heavy 50/50 mix.
+- **Speech-to-text noise correction.** Automatic speech recognition often
+  mangles proper nouns (a city name transcribed as gibberish). The event
+  extraction prompt is instructed to recognize an obviously-garbled but
+  phonetically-close real place/name and correct it — flagged as an
+  interpretation (`isAmbiguous: true`), never invented outright, and only
+  when genuinely confident.
 - Trip-level "Generate Complete Trip Story" across all days.
 - Markdown + HTML export for a day's blog and for the trip story.
 - Installable PWA (manifest + icons); mobile-first responsive layout.
-- **Output language toggle** (English / Hindi / Hinglish), per day, next to the
-  writing-style selector on the blog editor. English aims for polished
-  professional prose; Hindi for natural, everyday Devanagari that's easy
-  reading for any age; Hinglish for a casual, slang-flavored mix. This only
-  actually translates with a real provider connected (Gemini/Anthropic) —
-  the offline mock cannot translate, see `MockAiProvider`'s doc comment.
-- **Free, zero-config live speech-to-text** (`src/components/LiveTranscribe.tsx`)
-  using the browser's built-in `SpeechRecognition` (Chrome/Edge). Tap "🎤 Speak
-  to transcribe" on the day page and it appends recognized speech straight
-  into the transcript as you talk — no API key, no server round trip. It's
-  feature-detected and simply hides itself in unsupported browsers (Safari,
-  Firefox), where typing/pasting the transcript still works exactly as
-  before.
+- **Free, zero-config live speech-to-text** (`src/components/LiveTranscribe.tsx`,
+  and built into the main record button via `AudioRecorder.tsx`) using the
+  browser's built-in `SpeechRecognition` (Chrome/Edge). Recording the day's
+  story transcribes live and auto-generates the blog the moment you stop —
+  no API key, no server round trip for the transcription itself. Feature-
+  detected and hides itself in unsupported browsers (Safari, Firefox),
+  where typing/pasting the transcript still works exactly as before.
+- **Editable everything**, with visible affordances (hover/focus highlight
+  + a pencil icon) so it's obvious the title, headings, and paragraphs are
+  live text fields, not static content.
 
 ### Not yet wired up (by design — see phased plan below)
 
@@ -121,25 +140,47 @@ calls.
 
 ## 3. How AI processing works
 
-Two separate LLM calls per day, never one call asked to "just write a blog":
+Per day, this runs: extract → generate (English) → translate (Hindi +
+Hinglish, in parallel) — never one call asked to "just write a blog":
 
 1. **Extract events** (`src/prompts/extract-events.ts`) — turns the raw
    transcript into strict JSON: `{ sequence, time, location, activity,
    details[], isAmbiguous }[]`. Rules baked into the prompt: never invent a
    time/location that wasn't said, preserve ambiguity instead of resolving
-   it, don't merge or split events incorrectly.
-2. **Generate blog** (`src/prompts/generate-blog.ts`) — takes ONLY the
-   structured events (never the raw transcript) and writes a sectioned,
-   editorial-quality blog with an image suggestion per section where a photo
-   would make sense. Same anti-hallucination rules apply, plus: no purple
-   prose, no invented sensory detail, no generic AI travel clichés.
+   it, don't merge or split events incorrectly. It's also told the
+   transcript came from speech-to-text and may contain phonetically-garbled
+   proper nouns — it may correct an obviously-mangled but confidently
+   recognizable real place name, always flagging the correction as
+   `isAmbiguous: true` rather than silently treating it as fact.
+2. **Generate blog (English)** (`src/prompts/generate-blog.ts`) — takes ONLY
+   the structured events (never the raw transcript) and writes a sectioned,
+   editorial-quality blog with a catchy headline-style heading per section, a
+   narrative throughline connecting events, and an image suggestion where a
+   photo would make sense. This pass also fixes the section structure (count,
+   order, photo slots) for the whole day. Same anti-hallucination rules
+   apply, plus: no purple prose, no invented sensory detail, no generic AI
+   travel clichés.
+3. **Translate to Hindi and Hinglish** (`src/prompts/translate-blog.ts`),
+   run in parallel — rewrites the same section structure into each
+   language/voice rather than re-deciding it, which is what keeps photo
+   placements aligned across all three editions with zero extra bookkeeping.
+   Hindi aims for natural, everyday Devanagari; Hinglish for a Gen-Z-cool,
+   English-forward voice seasoned with Hindi, not a stiff literal
+   translation.
+
+Switching the language toggle afterward is instant and free — all three
+editions already exist, stored together in one `BlogDocument`
+(`src/types/index.ts`: `variants.en / .hi / .hinglish`, sharing one
+`imagePlacements` array keyed by section id).
 
 "Regenerate this section" (`src/prompts/regenerate-section.ts`) rewrites one
-section in isolation and never touches the rest of the document, your other
+section, in whichever language is currently active, in isolation — it never
+touches the rest of the document, the other two languages, your other
 edits, or your uploaded photos. "Generate Complete Trip Story"
 (`src/prompts/generate-trip-story.ts`) composes already-finalized per-day
-blogs into one longer piece — it never sees raw transcripts, so it inherits
-the same factual guarantees.
+blogs (in whichever language each day is currently showing) into one longer
+piece — it never sees raw transcripts, so it inherits the same factual
+guarantees.
 
 ### AI providers
 

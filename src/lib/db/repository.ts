@@ -1,11 +1,12 @@
 import type {
   BlogDocument,
-  BlogSection,
+  BlogSectionContent,
   Day,
   DayStatus,
   Image,
   ISODate,
   JournalEvent,
+  OutputLanguage,
   Recording,
   Transcript,
   Trip,
@@ -60,7 +61,13 @@ export interface JournalRepository {
 
   saveBlog(dayId: string, blog: BlogDocument): Promise<BlogDocument>;
   getBlog(dayId: string): Promise<BlogDocument | undefined>;
-  updateBlogSection(dayId: string, sectionId: string, patch: Partial<Pick<BlogSection, "heading" | "paragraphs">>): Promise<BlogDocument>;
+  updateBlogTitle(dayId: string, language: OutputLanguage, title: string): Promise<BlogDocument>;
+  updateBlogSection(
+    dayId: string,
+    language: OutputLanguage,
+    sectionId: string,
+    patch: Partial<Pick<BlogSectionContent, "heading" | "paragraphs">>
+  ): Promise<BlogDocument>;
   reorderBlogSections(dayId: string, orderedSectionIds: string[]): Promise<BlogDocument>;
 
   saveImage(dayId: string, blob: Blob, mimeType: string, caption?: string | null): Promise<Image>;
@@ -315,26 +322,46 @@ export class IndexedDBRepository implements JournalRepository {
     return list[0];
   }
 
-  async updateBlogSection(dayId: string, sectionId: string, patch: Partial<Pick<BlogSection, "heading" | "paragraphs">>): Promise<BlogDocument> {
+  async updateBlogTitle(dayId: string, language: OutputLanguage, title: string): Promise<BlogDocument> {
     const blog = await this.getBlog(dayId);
     if (!blog) throw new Error("Blog not found");
-    const sections = blog.sections.map((s) =>
+    const variant = blog.variants[language];
+    const variants = { ...blog.variants, [language]: { ...variant, title, titleUserEdited: true } };
+    return this.saveBlog(dayId, { ...blog, variants });
+  }
+
+  async updateBlogSection(
+    dayId: string,
+    language: OutputLanguage,
+    sectionId: string,
+    patch: Partial<Pick<BlogSectionContent, "heading" | "paragraphs">>
+  ): Promise<BlogDocument> {
+    const blog = await this.getBlog(dayId);
+    if (!blog) throw new Error("Blog not found");
+    const variant = blog.variants[language];
+    const sections = variant.sections.map((s) =>
       s.id === sectionId ? { ...s, ...patch, userEdited: true } : s
     );
-    return this.saveBlog(dayId, { ...blog, sections });
+    const variants = { ...blog.variants, [language]: { ...variant, sections } };
+    return this.saveBlog(dayId, { ...blog, variants });
   }
 
   async reorderBlogSections(dayId: string, orderedSectionIds: string[]): Promise<BlogDocument> {
     const blog = await this.getBlog(dayId);
     if (!blog) throw new Error("Blog not found");
-    const bySectionId = new Map(blog.sections.map((s) => [s.id, s]));
-    const sections = orderedSectionIds
-      .map((id, i) => {
-        const s = bySectionId.get(id);
-        return s ? { ...s, order: i } : undefined;
-      })
-      .filter((s): s is BlogSection => Boolean(s));
-    return this.saveBlog(dayId, { ...blog, sections });
+    const orderOf = new Map(orderedSectionIds.map((id, i) => [id, i]));
+
+    const variants = { ...blog.variants };
+    for (const lang of Object.keys(variants) as OutputLanguage[]) {
+      const variant = variants[lang];
+      const sections = [...variant.sections]
+        .filter((s) => orderOf.has(s.id))
+        .sort((a, b) => orderOf.get(a.id)! - orderOf.get(b.id)!)
+        .map((s, i) => ({ ...s, order: i }));
+      variants[lang] = { ...variant, sections };
+    }
+
+    return this.saveBlog(dayId, { ...blog, variants });
   }
 
   async saveImage(dayId: string, blob: Blob, mimeType: string, caption?: string | null): Promise<Image> {
@@ -378,42 +405,36 @@ export class IndexedDBRepository implements JournalRepository {
 
     const blog = await this.getBlog(image.dayId);
     if (blog) {
-      const sections = blog.sections.map((s) =>
-        s.imagePlacement?.imageId === imageId
-          ? { ...s, imagePlacement: { ...s.imagePlacement!, imageId: null } }
-          : s
+      const imagePlacements = blog.imagePlacements.map((p) =>
+        p.imageId === imageId ? { ...p, imageId: null } : p
       );
-      await this.saveBlog(image.dayId, { ...blog, sections });
+      await this.saveBlog(image.dayId, { ...blog, imagePlacements });
     }
   }
 
   async placeImage(dayId: string, sectionId: string, imageId: string): Promise<BlogDocument> {
     const blog = await this.getBlog(dayId);
     if (!blog) throw new Error("Blog not found");
-    const sections = blog.sections.map((s) =>
-      s.id === sectionId && s.imagePlacement
-        ? { ...s, imagePlacement: { ...s.imagePlacement, imageId } }
-        : s
+    const imagePlacements = blog.imagePlacements.map((p) =>
+      p.sectionId === sectionId ? { ...p, imageId } : p
     );
     const image = await dbGet<Image>(STORES.images, imageId);
     if (image) await dbPut(STORES.images, { ...image, placedInBlog: true });
-    return this.saveBlog(dayId, { ...blog, sections });
+    return this.saveBlog(dayId, { ...blog, imagePlacements });
   }
 
   async clearImagePlacement(dayId: string, sectionId: string): Promise<BlogDocument> {
     const blog = await this.getBlog(dayId);
     if (!blog) throw new Error("Blog not found");
-    const removedImageId = blog.sections.find((s) => s.id === sectionId)?.imagePlacement?.imageId;
-    const sections = blog.sections.map((s) =>
-      s.id === sectionId && s.imagePlacement
-        ? { ...s, imagePlacement: { ...s.imagePlacement, imageId: null } }
-        : s
+    const removedImageId = blog.imagePlacements.find((p) => p.sectionId === sectionId)?.imageId;
+    const imagePlacements = blog.imagePlacements.map((p) =>
+      p.sectionId === sectionId ? { ...p, imageId: null } : p
     );
     if (removedImageId) {
       const image = await dbGet<Image>(STORES.images, removedImageId);
       if (image) await dbPut(STORES.images, { ...image, placedInBlog: false });
     }
-    return this.saveBlog(dayId, { ...blog, sections });
+    return this.saveBlog(dayId, { ...blog, imagePlacements });
   }
 }
 

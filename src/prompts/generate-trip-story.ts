@@ -46,10 +46,11 @@ export function buildGenerateTripStoryUserPrompt(
     .map((day) => {
       const blog = blogs.get(day.id);
       if (!blog) return null;
-      const body = blog.sections
+      const variant = blog.variants[blog.activeLanguage];
+      const body = variant.sections
         .map((s) => `${s.heading}\n${s.paragraphs.join("\n\n")}`)
         .join("\n\n");
-      return `## Day ${day.dayNumber} — ${day.date}\n${blog.title}\n\n${body}`;
+      return `## Day ${day.dayNumber} — ${day.date}\n${variant.title}\n\n${body}`;
     })
     .filter(Boolean)
     .join("\n\n---\n\n");

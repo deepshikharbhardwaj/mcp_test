@@ -1,4 +1,4 @@
-import type { BlogDocument } from "@/types";
+import type { BlogLanguageVariant, ImagePlacement } from "@/types";
 import type { GeneratedTripStory } from "@/lib/ai/types";
 
 export function downloadTextFile(filename: string, content: string, mime: string) {
@@ -13,33 +13,37 @@ export function downloadTextFile(filename: string, content: string, mime: string
   URL.revokeObjectURL(url);
 }
 
-export function dayBlogToMarkdown(blog: BlogDocument): string {
-  const lines = [`# ${blog.title}`, ""];
-  for (const section of blog.sections) {
+export function dayBlogToMarkdown(variant: BlogLanguageVariant, imagePlacements: ImagePlacement[]): string {
+  const placementBySectionId = new Map(imagePlacements.map((p) => [p.sectionId, p]));
+  const lines = [`# ${variant.title}`, ""];
+  for (const section of variant.sections) {
     lines.push(`## ${section.heading}`, "");
     for (const p of section.paragraphs) lines.push(p, "");
-    if (section.imagePlacement) {
-      const label = section.imagePlacement.caption || section.imagePlacement.suggestion;
-      lines.push(`![${label}](image-placeholder: ${section.imagePlacement.suggestion})`, "");
+    const placement = placementBySectionId.get(section.id);
+    if (placement) {
+      const label = placement.caption || placement.suggestion;
+      lines.push(`![${label}](image-placeholder: ${placement.suggestion})`, "");
     }
   }
   return lines.join("\n");
 }
 
-export function dayBlogToHtml(blog: BlogDocument, tripName: string): string {
-  const sections = blog.sections
+export function dayBlogToHtml(variant: BlogLanguageVariant, imagePlacements: ImagePlacement[], tripName: string): string {
+  const placementBySectionId = new Map(imagePlacements.map((p) => [p.sectionId, p]));
+  const sections = variant.sections
     .map((s) => {
       const paragraphs = s.paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("\n");
-      const image = s.imagePlacement
-        ? `<figure><div class="placeholder">📷 ${escapeHtml(s.imagePlacement.suggestion)}</div>${
-            s.imagePlacement.caption ? `<figcaption>${escapeHtml(s.imagePlacement.caption)}</figcaption>` : ""
+      const placement = placementBySectionId.get(s.id);
+      const image = placement
+        ? `<figure><div class="placeholder">📷 ${escapeHtml(placement.suggestion)}</div>${
+            placement.caption ? `<figcaption>${escapeHtml(placement.caption)}</figcaption>` : ""
           }</figure>`
         : "";
       return `<section><h2>${escapeHtml(s.heading)}</h2>${paragraphs}${image}</section>`;
     })
     .join("\n");
 
-  return htmlDocument(escapeHtml(blog.title), tripName, sections);
+  return htmlDocument(escapeHtml(variant.title), tripName, sections);
 }
 
 export function tripStoryToMarkdown(story: GeneratedTripStory): string {

@@ -1,6 +1,6 @@
 import type { BlogDocument, BlogStyle, Day, JournalEvent, OutputLanguage, Trip } from "@/types";
 import type { TripStoryMode } from "@/prompts/generate-trip-story";
-import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
+import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory, TranslatedBlog } from "./types";
 
 /**
  * Zero-config fallback provider. Runs entirely offline with simple
@@ -34,14 +34,10 @@ export class MockAiProvider implements AiProvider {
     return { detectedLanguage: detectLanguage(transcript), events };
   }
 
-  async generateBlog(events: JournalEvent[], _style: BlogStyle, outputLanguage: OutputLanguage, _dayDate: string): Promise<GeneratedBlog> {
+  async generateBlog(events: JournalEvent[], _style: BlogStyle, _dayDate: string): Promise<GeneratedBlog> {
     if (events.length === 0) {
       return { title: "Untitled Day", sections: [] };
     }
-    // Honesty note: this heuristic provider cannot actually translate — it
-    // only lightly cleans up the transcript's own words, regardless of
-    // outputLanguage. Real Hindi/Hinglish rewriting needs Gemini or Anthropic.
-    void outputLanguage;
     const groups = groupEvents(events, 2);
     const sections: GeneratedSection[] = groups.map((group) => {
       const heading = group.find((e) => e.location)?.location ?? group[0]!.activity;
@@ -56,6 +52,19 @@ export class MockAiProvider implements AiProvider {
 
     const title = deriveTitle(events);
     return { title, sections };
+  }
+
+  async translateBlog(
+    englishTitle: string,
+    englishSections: Array<{ heading: string; paragraphs: string[] }>,
+    _events: JournalEvent[],
+    _style: BlogStyle,
+    _outputLanguage: OutputLanguage
+  ): Promise<TranslatedBlog> {
+    // Honesty note: this offline heuristic provider cannot actually
+    // translate — it returns the English structure unchanged. Real
+    // Hindi/Hinglish rewriting needs Gemini or Anthropic configured.
+    return { title: englishTitle, sections: englishSections };
   }
 
   async regenerateSection(
@@ -80,9 +89,10 @@ export class MockAiProvider implements AiProvider {
       .map((day) => {
         const blog = blogs.get(day.id);
         if (!blog) return null;
+        const variant = blog.variants[blog.activeLanguage];
         return {
-          heading: `Day ${day.dayNumber} — ${blog.title}`,
-          paragraphs: blog.sections.flatMap((s) => s.paragraphs),
+          heading: `Day ${day.dayNumber} — ${variant.title}`,
+          paragraphs: variant.sections.flatMap((s) => s.paragraphs),
         };
       })
       .filter((s): s is { heading: string; paragraphs: string[] } => Boolean(s));

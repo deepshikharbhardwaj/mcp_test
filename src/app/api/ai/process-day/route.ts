@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAiProvider } from "@/lib/ai";
-import type { BlogStyle, JournalEvent, OutputLanguage } from "@/types";
+import type { BlogStyle, JournalEvent } from "@/types";
 
 export const runtime = "nodejs";
 
@@ -8,7 +8,6 @@ interface ProcessDayRequest {
   transcript: string;
   dayDate: string;
   style: BlogStyle;
-  outputLanguage: OutputLanguage;
 }
 
 export async function POST(req: Request) {
@@ -35,13 +34,21 @@ export async function POST(req: Request) {
       dayId: "pending",
     }));
 
-    const blog = await provider.generateBlog(eventsForBlog, body.style, body.outputLanguage ?? "en", body.dayDate);
+    // Canonical English structure first (decides section count/headings/image
+    // slots), then Hindi and Hinglish are translated from it in parallel —
+    // this is what makes all three languages ready after one generation.
+    const english = await provider.generateBlog(eventsForBlog, body.style, body.dayDate);
+    const [hi, hinglish] = await Promise.all([
+      provider.translateBlog(english.title, english.sections, eventsForBlog, body.style, "hi"),
+      provider.translateBlog(english.title, english.sections, eventsForBlog, body.style, "hinglish"),
+    ]);
 
     return NextResponse.json({
       providerName: provider.name,
       detectedLanguage: extracted.detectedLanguage,
       events: extracted.events,
-      blog,
+      english,
+      translations: { hi, hinglish },
     });
   } catch (err) {
     console.error("[api/ai/process-day]", err);

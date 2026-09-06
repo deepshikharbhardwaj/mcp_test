@@ -1,5 +1,6 @@
 import type { BlogStyle, JournalEvent, OutputLanguage } from "@/types";
-import { STYLE_DESCRIPTIONS, OUTPUT_LANGUAGE_DESCRIPTIONS } from "./generate-blog";
+import { STYLE_DESCRIPTIONS } from "./generate-blog";
+import { OUTPUT_LANGUAGE_DESCRIPTIONS } from "./language-descriptions";
 
 /**
  * Rewrites ONE section in isolation. Used by "Regenerate this section" so
@@ -18,6 +19,9 @@ Follow the same absolute rules as full blog generation:
 - Use only facts present in the given events. Never invent detail.
 - Preserve ambiguity where the events are ambiguous or incomplete.
 - Avoid generic AI travel clichés and purple prose.
+- Write a catchy, specific heading (like a real travel-magazine headline,
+  not a restated location name) and give the paragraphs narrative momentum
+  rather than reading as a flat recap.
 - Decide independently whether an image suggestion still fits (keep
   "imageSuggestion" in English regardless of output language — it's an
   internal search label).

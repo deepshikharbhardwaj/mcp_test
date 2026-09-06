@@ -1,40 +1,65 @@
-import type { BlogDocument, BlogStyle, OutputLanguage } from "@/types";
+import type { BlogDocument, BlogLanguageVariant, BlogStyle, ImagePlacement, OutputLanguage } from "@/types";
 import { newId } from "@/lib/utils/id";
-import type { GeneratedBlog } from "./types";
+import type { GeneratedBlog, TranslatedBlog } from "./types";
 
-/** Converts a fresh AI response into a persistable BlogDocument with real ids. */
+/**
+ * Assembles the full multi-language BlogDocument from one canonical English
+ * generation plus its Hindi/Hinglish translations. Section ids are minted
+ * once here and shared across all three variants, which is what keeps a
+ * photo placed against "section 2" meaningful no matter which language is
+ * currently being viewed.
+ */
 export function buildBlogDocument(
   dayId: string,
-  generated: GeneratedBlog,
+  english: GeneratedBlog,
+  translations: Record<Exclude<OutputLanguage, "en">, TranslatedBlog>,
   style: BlogStyle,
-  outputLanguage: OutputLanguage
+  activeLanguage: OutputLanguage
 ): BlogDocument {
   const now = new Date().toISOString();
-  return {
-    id: newId(),
-    dayId,
-    title: generated.title,
-    style,
-    outputLanguage,
-    version: 0,
-    createdAt: now,
-    updatedAt: now,
-    sections: generated.sections.map((s, i) => ({
-      id: newId(),
-      blogId: "",
-      order: i,
-      heading: s.heading,
-      paragraphs: s.paragraphs,
-      userEdited: false,
-      imagePlacement: s.imageSuggestion
+  const sectionIds = english.sections.map(() => newId());
+
+  function buildVariant(title: string, sections: Array<{ heading: string; paragraphs: string[] }>): BlogLanguageVariant {
+    return {
+      title,
+      titleUserEdited: false,
+      sections: sections.map((s, i) => ({
+        id: sectionIds[i]!,
+        order: i,
+        heading: s.heading,
+        paragraphs: s.paragraphs,
+        userEdited: false,
+      })),
+    };
+  }
+
+  const imagePlacements: ImagePlacement[] = english.sections
+    .map((s, i): ImagePlacement | null =>
+      s.imageSuggestion
         ? {
             id: newId(),
-            sectionId: "",
+            sectionId: sectionIds[i]!,
             imageId: null,
             suggestion: s.imageSuggestion,
             caption: null,
           }
-        : null,
-    })),
+        : null
+    )
+    .filter((p): p is ImagePlacement => p !== null);
+
+  return {
+    id: newId(),
+    dayId,
+    style,
+    activeLanguage,
+    version: 0,
+    createdAt: now,
+    updatedAt: now,
+    imagePlacements,
+    variants: {
+      en: buildVariant(english.title, english.sections),
+      hi: buildVariant(translations.hi.title, translations.hi.sections),
+      hinglish: buildVariant(translations.hinglish.title, translations.hinglish.sections),
+    },
   };
 }

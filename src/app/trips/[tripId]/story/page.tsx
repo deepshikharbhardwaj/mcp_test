@@ -33,7 +33,8 @@ export default function TripStoryPage() {
       const entries: Record<string, BlogDocument> = {};
       for (const day of d) {
         const blog = await repo.getBlog(day.id);
-        if (blog) entries[day.id] = blog;
+        // Skip blogs saved before the multi-language rewrite (missing `variants`) — regenerate the day to include it.
+        if (blog && blog.variants) entries[day.id] = blog;
       }
       setBlogsByDayId(entries);
       setLoading(false);

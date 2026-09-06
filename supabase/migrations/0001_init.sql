@@ -68,26 +68,48 @@ create table events (
   is_ambiguous boolean not null default false
 );
 
+-- A blog document holds three language editions (variants) generated
+-- together in one pass, sharing one section structure. `blog_sections` is
+-- the shared "slot" (order + image placement); `blog_document_variants`
+-- and `blog_section_variants` hold the per-language text. This is what
+-- lets the language toggle switch instantly with no regeneration, and
+-- keeps a photo placed against one slot meaningful in all three languages.
+
 create table blog_documents (
   id uuid primary key default gen_random_uuid(),
   day_id uuid not null references days(id) on delete cascade,
-  title text not null,
   style text not null default 'professional_travel'
     check (style in ('professional_travel', 'personal_warm', 'editorial', 'minimal')),
-  output_language text not null default 'en'
-    check (output_language in ('en', 'hi', 'hinglish')),
+  active_language text not null default 'en'
+    check (active_language in ('en', 'hi', 'hinglish')),
   version int not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+create table blog_document_variants (
+  id uuid primary key default gen_random_uuid(),
+  blog_id uuid not null references blog_documents(id) on delete cascade,
+  language text not null check (language in ('en', 'hi', 'hinglish')),
+  title text not null,
+  title_user_edited boolean not null default false,
+  unique (blog_id, language)
+);
+
 create table blog_sections (
   id uuid primary key default gen_random_uuid(),
   blog_id uuid not null references blog_documents(id) on delete cascade,
-  "order" int not null,
+  "order" int not null
+);
+
+create table blog_section_variants (
+  id uuid primary key default gen_random_uuid(),
+  section_id uuid not null references blog_sections(id) on delete cascade,
+  language text not null check (language in ('en', 'hi', 'hinglish')),
   heading text not null,
   paragraphs jsonb not null default '[]',
-  user_edited boolean not null default false
+  user_edited boolean not null default false,
+  unique (section_id, language)
 );
 
 create table images (
@@ -147,7 +169,9 @@ alter table recordings enable row level security;
 alter table transcripts enable row level security;
 alter table events enable row level security;
 alter table blog_documents enable row level security;
+alter table blog_document_variants enable row level security;
 alter table blog_sections enable row level security;
+alter table blog_section_variants enable row level security;
 alter table images enable row level security;
 alter table image_placements enable row level security;
 alter table exports enable row level security;
@@ -175,6 +199,20 @@ create policy "blog_documents via owned day" on blog_documents
   for all using (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = blog_documents.day_id and trips.user_id = auth.uid()))
   with check (exists (select 1 from days join trips on trips.id = days.trip_id where days.id = blog_documents.day_id and trips.user_id = auth.uid()));
 
+create policy "blog_document_variants via owned blog" on blog_document_variants
+  for all using (exists (
+    select 1 from blog_documents
+    join days on days.id = blog_documents.day_id
+    join trips on trips.id = days.trip_id
+    where blog_documents.id = blog_document_variants.blog_id and trips.user_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from blog_documents
+    join days on days.id = blog_documents.day_id
+    join trips on trips.id = days.trip_id
+    where blog_documents.id = blog_document_variants.blog_id and trips.user_id = auth.uid()
+  ));
+
 create policy "blog_sections via owned blog" on blog_sections
   for all using (exists (
     select 1 from blog_documents
@@ -187,6 +225,22 @@ create policy "blog_sections via owned blog" on blog_sections
     join days on days.id = blog_documents.day_id
     join trips on trips.id = days.trip_id
     where blog_documents.id = blog_sections.blog_id and trips.user_id = auth.uid()
+  ));
+
+create policy "blog_section_variants via owned section" on blog_section_variants
+  for all using (exists (
+    select 1 from blog_sections
+    join blog_documents on blog_documents.id = blog_sections.blog_id
+    join days on days.id = blog_documents.day_id
+    join trips on trips.id = days.trip_id
+    where blog_sections.id = blog_section_variants.section_id and trips.user_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from blog_sections
+    join blog_documents on blog_documents.id = blog_sections.blog_id
+    join days on days.id = blog_documents.day_id
+    join trips on trips.id = days.trip_id
+    where blog_sections.id = blog_section_variants.section_id and trips.user_id = auth.uid()
   ));
 
 create policy "images via owned day" on images

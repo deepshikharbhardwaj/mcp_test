@@ -1,4 +1,4 @@
-import type { BlogSection } from "@/types";
+import type { BlogSectionContent } from "@/types";
 
 /**
  * Standalone image-suggestion prompt.
@@ -20,7 +20,7 @@ implied, return null rather than guessing.
 
 Output strict JSON: { "imageSuggestion": string | null }`;
 
-export function buildSuggestImageUserPrompt(section: Pick<BlogSection, "heading" | "paragraphs">): string {
+export function buildSuggestImageUserPrompt(section: Pick<BlogSectionContent, "heading" | "paragraphs">): string {
   return `Section heading: ${section.heading}
 
 Section text:

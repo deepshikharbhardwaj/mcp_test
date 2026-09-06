@@ -1,19 +1,22 @@
 import type { BlogDocument, BlogStyle, Day, JournalEvent, OutputLanguage, Trip } from "@/types";
 import type { TripStoryMode } from "@/prompts/generate-trip-story";
-import type { ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
+import type { ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory, TranslatedBlog } from "./types";
 
 /** Browser-side helpers that call our own API routes (never the AI provider directly). */
 
-export async function processDayTranscript(
-  transcript: string,
-  dayDate: string,
-  style: BlogStyle,
-  outputLanguage: OutputLanguage
-): Promise<{ providerName: string; detectedLanguage: ExtractedEvents["detectedLanguage"]; events: ExtractedEvents["events"]; blog: GeneratedBlog }> {
+export interface ProcessDayResult {
+  providerName: string;
+  detectedLanguage: ExtractedEvents["detectedLanguage"];
+  events: ExtractedEvents["events"];
+  english: GeneratedBlog;
+  translations: { hi: TranslatedBlog; hinglish: TranslatedBlog };
+}
+
+export async function processDayTranscript(transcript: string, dayDate: string, style: BlogStyle): Promise<ProcessDayResult> {
   const res = await fetch("/api/ai/process-day", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ transcript, dayDate, style, outputLanguage }),
+    body: JSON.stringify({ transcript, dayDate, style }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to process day");

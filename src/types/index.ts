@@ -77,31 +77,45 @@ export type BlogStyle =
 /** Output language for the generated blog text — independent of the language the transcript was spoken in. */
 export type OutputLanguage = "en" | "hi" | "hinglish";
 
+/**
+ * An image placement is a language-independent "slot" in the blog — the
+ * same slot (and the same uploaded photo, once placed) applies no matter
+ * which of the three language variants is being viewed. `sectionId` matches
+ * the `id` on the corresponding `BlogSectionContent` in every variant, since
+ * all three variants share the same section structure by construction (see
+ * `translate-blog.ts`).
+ */
 export interface ImagePlacement {
   id: string;
   sectionId: string;
   imageId: string | null; // null until the user uploads a photo here
-  suggestion: string; // AI's short label, e.g. "Delhi Airport"
+  suggestion: string; // AI's short label, e.g. "Delhi Airport" — always English, it's an internal search label
   caption: string | null;
 }
 
-export interface BlogSection {
-  id: string;
-  blogId: string;
+/** The text content of one section, in one language. */
+export interface BlogSectionContent {
+  id: string; // shared across all three variants — this is the slot ImagePlacement.sectionId points to
   order: number;
   heading: string;
   paragraphs: string[];
-  imagePlacement: ImagePlacement | null;
-  userEdited: boolean; // true once the user has hand-edited this section
+  userEdited: boolean; // true once the user has hand-edited this section, in this language
+}
+
+export interface BlogLanguageVariant {
+  title: string;
+  sections: BlogSectionContent[];
+  titleUserEdited: boolean;
 }
 
 export interface BlogDocument {
   id: string;
   dayId: string;
-  title: string;
   style: BlogStyle;
-  outputLanguage: OutputLanguage;
-  sections: BlogSection[];
+  /** Which language is currently being viewed/edited — purely a display preference, all three always exist together. */
+  activeLanguage: OutputLanguage;
+  variants: Record<OutputLanguage, BlogLanguageVariant>;
+  imagePlacements: ImagePlacement[];
   version: number;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;

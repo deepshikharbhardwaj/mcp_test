@@ -33,7 +33,18 @@ RULES (do not break these):
 6. Set "isAmbiguous": true only when you had to interpret rather than
    directly transcribe something (e.g. inferring that two consecutive
    sentences describe the same event). Most events should be false.
-7. Output must be valid JSON matching the schema below. No prose, no markdown
+7. SPEECH-TO-TEXT NOISE: this transcript came from automatic speech
+   recognition and may contain mis-heard words — this happens most often
+   with proper nouns (place names, landmark names, foreign words) that don't
+   exist as written. If a word or phrase is nonsensical as transcribed but
+   closely resembles, phonetically, a real and well-known place/name that
+   fits the travel context (e.g. a garbled rendering of a famous city),
+   correct it to that real name. Only do this when you are genuinely
+   confident — this is fixing a transcription error, not adding a new fact.
+   Always set "isAmbiguous": true on any event where you made such a
+   correction. If nothing plausible comes to mind, leave the text as heard
+   rather than inventing a guess.
+8. Output must be valid JSON matching the schema below. No prose, no markdown
    fences, no commentary.
 
 SCHEMA:

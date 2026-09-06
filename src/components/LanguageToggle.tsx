@@ -5,7 +5,7 @@ import type { OutputLanguage } from "@/types";
 const OPTIONS: Array<{ value: OutputLanguage; label: string; hint: string }> = [
   { value: "en", label: "English", hint: "Polished, professional English" },
   { value: "hi", label: "हिंदी", hint: "Natural Hindi, easy for all ages" },
-  { value: "hinglish", label: "Hinglish", hint: "Fun mix with today's slang" },
+  { value: "hinglish", label: "Hinglish", hint: "Gen-Z cool English with a Hindi flavor" },
 ];
 
 export function LanguageToggle({ value, onChange }: { value: OutputLanguage; onChange: (v: OutputLanguage) => void }) {
@@ -26,7 +26,7 @@ export function LanguageToggle({ value, onChange }: { value: OutputLanguage; onC
           </button>
         ))}
       </div>
-      <p className="text-[11px] text-mist mt-1">{OPTIONS.find((o) => o.value === value)?.hint} · tap Regenerate to apply</p>
+      <p className="text-[11px] text-mist mt-1">{OPTIONS.find((o) => o.value === value)?.hint} · all three ready instantly</p>
     </div>
   );
 }
