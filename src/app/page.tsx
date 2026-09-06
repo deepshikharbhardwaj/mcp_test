@@ -31,10 +31,9 @@ export default function DashboardPage() {
 
   return (
     <main className="max-w-2xl mx-auto px-5 pt-10 pb-24 sm:pt-16">
-      <header className="mb-8 flex items-center justify-between">
-        <div>
-          <p className="text-xs tracking-[0.2em] text-mist font-medium">MY TRAVEL JOURNAL</p>
-        </div>
+      <header className="mb-8">
+        <p className="text-xs tracking-[0.3em] text-clay font-medium mb-1">PRIVATE JOURNAL</p>
+        <h1 className="text-3xl font-serif font-semibold text-ink">My Travel Journal</h1>
       </header>
 
       <Button size="lg" fullWidth onClick={() => setShowNewTrip(true)} className="mb-8">

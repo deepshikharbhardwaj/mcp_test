@@ -34,6 +34,12 @@ like a calm, private, premium journal for one person.
 - Trip-level "Generate Complete Trip Story" across all days.
 - Markdown + HTML export for a day's blog and for the trip story.
 - Installable PWA (manifest + icons); mobile-first responsive layout.
+- **Output language toggle** (English / Hindi / Hinglish), per day, next to the
+  writing-style selector on the blog editor. English aims for polished
+  professional prose; Hindi for natural, everyday Devanagari that's easy
+  reading for any age; Hinglish for a casual, slang-flavored mix. This only
+  actually translates with a real provider connected (Gemini/Anthropic) —
+  the offline mock cannot translate, see `MockAiProvider`'s doc comment.
 - **Free, zero-config live speech-to-text** (`src/components/LiveTranscribe.tsx`)
   using the browser's built-in `SpeechRecognition` (Chrome/Edge). Tap "🎤 Speak
   to transcribe" on the day page and it appends recognized speech straight
@@ -137,22 +143,30 @@ the same factual guarantees.
 
 ### AI providers
 
-`src/lib/ai/types.ts` defines the `AiProvider` interface. Two
-implementations exist:
+`src/lib/ai/types.ts` defines the `AiProvider` interface.
+`src/lib/ai/index.ts` → `getAiProvider()` picks one, server-side only, in
+this order:
 
-- **`MockAiProvider`** (default, zero config) — offline heuristics: splits
-  the transcript into clauses, detects times/locations with regex, groups
-  events into sections. It does **not** translate Hindi/Hinglish into
-  polished English — that genuinely needs a language model. It exists to
-  make the full pipeline usable and demoable with no API key.
-- **`AnthropicAiProvider`** — real Claude-backed extraction and writing.
-  Activates automatically the moment `ANTHROPIC_API_KEY` is set in your
-  environment; nothing else changes. Only ever instantiated server-side
-  (`src/lib/ai/index.ts` → `getAiProvider()`), inside Next.js route handlers
-  under `src/app/api/ai/`. The key never reaches the browser.
+1. **`GeminiAiProvider`** — used automatically if `GEMINI_API_KEY` is set.
+   Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+   Defaults to `gemini-3.6-flash`; override with `GEMINI_MODEL` if Google
+   moves the goalposts again (they deprecate model names fairly often —
+   check the error message, it names the current replacement directly).
+2. **`AnthropicAiProvider`** — used if `ANTHROPIC_API_KEY` is set instead.
+   Note this requires separate paid API credits at
+   [console.anthropic.com](https://console.anthropic.com) — a Claude
+   Pro/Max subscription does not cover API usage.
+3. **`MockAiProvider`** (default, zero config) — offline heuristics: splits
+   the transcript into clauses, detects times/locations with regex, groups
+   events into sections. It does **not** translate Hindi/Hinglish into
+   polished English — that genuinely needs a language model. It exists so
+   the full pipeline is usable and demoable with no API key at all.
 
-To add another provider (e.g. a different model, or a dedicated
-speech-to-text service), implement `AiProvider` and switch it in
+Only one key is needed — set whichever you have in `.env.local`. Every
+provider is only ever instantiated server-side, inside Next.js route
+handlers under `src/app/api/ai/`; keys never reach the browser.
+
+To add another provider, implement `AiProvider` and add it to
 `getAiProvider()`. Nothing above that layer needs to change.
 
 ---

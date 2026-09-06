@@ -1,19 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import type { BlogDocument, BlogStyle, Image as JournalImage } from "@/types";
+import { useEffect, useState } from "react";
+import type { BlogDocument, BlogStyle, Image as JournalImage, OutputLanguage } from "@/types";
 import { StyleSelector } from "./StyleSelector";
+import { LanguageToggle } from "./LanguageToggle";
 import { ImagePlaceholderBlock } from "./ImagePlaceholder";
 import { Button } from "./Button";
 
 interface Props {
   blog: BlogDocument;
   style: BlogStyle;
+  outputLanguage: OutputLanguage;
   images: JournalImage[];
   imageUrls: Record<string, string>;
   regeneratingSectionId: string | null;
   regeneratingAll: boolean;
   onStyleChange: (style: BlogStyle) => void;
+  onLanguageChange: (language: OutputLanguage) => void;
   onTitleChange: (title: string) => Promise<void>;
   onSectionTextChange: (sectionId: string, heading: string, paragraphs: string[]) => Promise<void>;
   onRegenerateSection: (sectionId: string) => Promise<void>;
@@ -24,24 +27,29 @@ interface Props {
 }
 
 export function BlogEditor({
-  blog, style, images, imageUrls, regeneratingSectionId, regeneratingAll,
-  onStyleChange, onTitleChange, onSectionTextChange, onRegenerateSection,
+  blog, style, outputLanguage, images, imageUrls, regeneratingSectionId, regeneratingAll,
+  onStyleChange, onLanguageChange, onTitleChange, onSectionTextChange, onRegenerateSection,
   onRegenerateAll, onImageUpload, onImageRemove, onCaptionChange,
 }: Props) {
   const [title, setTitle] = useState(blog.title);
+  useEffect(() => setTitle(blog.title), [blog.title]);
 
   const imageById = new Map(images.map((i) => [i.id, i]));
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <StyleSelector value={style} onChange={onStyleChange} />
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-4">
+        <div className="flex flex-col gap-3">
+          <StyleSelector value={style} onChange={onStyleChange} />
+          <LanguageToggle value={outputLanguage} onChange={onLanguageChange} />
+        </div>
         <Button variant="secondary" size="sm" onClick={onRegenerateAll} disabled={regeneratingAll}>
           {regeneratingAll ? "Regenerating…" : "↻ Regenerate entire blog"}
         </Button>
       </div>
 
-      <article className="bg-white border border-sand rounded-2xl px-6 py-8 sm:px-10 sm:py-12 max-w-editorial mx-auto">
+      <article className="relative bg-white border border-sand rounded-2xl px-6 py-8 sm:px-10 sm:py-12 max-w-editorial mx-auto shadow-card overflow-hidden">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-accent/70 via-clay/40 to-transparent" />
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -53,7 +61,6 @@ export function BlogEditor({
           {blog.sections.map((section) => (
             <SectionBlock
               key={section.id}
-              sectionId={section.id}
               heading={section.heading}
               paragraphs={section.paragraphs}
               userEdited={section.userEdited}
@@ -83,9 +90,8 @@ export function BlogEditor({
 }
 
 function SectionBlock({
-  sectionId, heading, paragraphs, userEdited, regenerating, onTextChange, onRegenerate, children,
+  heading, paragraphs, userEdited, regenerating, onTextChange, onRegenerate, children,
 }: {
-  sectionId: string;
   heading: string;
   paragraphs: string[];
   userEdited: boolean;
@@ -96,6 +102,12 @@ function SectionBlock({
 }) {
   const [localHeading, setLocalHeading] = useState(heading);
   const [localBody, setLocalBody] = useState(paragraphs.join("\n\n"));
+
+  // Re-sync when the section changes underneath us (regenerate, style/language
+  // switch) — otherwise this component (keyed by a stable section id) would
+  // keep showing stale local text forever after an external update.
+  useEffect(() => setLocalHeading(heading), [heading]);
+  useEffect(() => setLocalBody(paragraphs.join("\n\n")), [paragraphs]);
 
   async function commit() {
     const nextParagraphs = localBody.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);

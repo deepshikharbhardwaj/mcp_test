@@ -74,6 +74,8 @@ create table blog_documents (
   title text not null,
   style text not null default 'professional_travel'
     check (style in ('professional_travel', 'personal_warm', 'editorial', 'minimal')),
+  output_language text not null default 'en'
+    check (output_language in ('en', 'hi', 'hinglish')),
   version int not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

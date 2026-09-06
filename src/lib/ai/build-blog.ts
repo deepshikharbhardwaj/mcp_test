@@ -1,15 +1,21 @@
-import type { BlogDocument, BlogStyle } from "@/types";
+import type { BlogDocument, BlogStyle, OutputLanguage } from "@/types";
 import { newId } from "@/lib/utils/id";
 import type { GeneratedBlog } from "./types";
 
 /** Converts a fresh AI response into a persistable BlogDocument with real ids. */
-export function buildBlogDocument(dayId: string, generated: GeneratedBlog, style: BlogStyle): BlogDocument {
+export function buildBlogDocument(
+  dayId: string,
+  generated: GeneratedBlog,
+  style: BlogStyle,
+  outputLanguage: OutputLanguage
+): BlogDocument {
   const now = new Date().toISOString();
   return {
     id: newId(),
     dayId,
     title: generated.title,
     style,
+    outputLanguage,
     version: 0,
     createdAt: now,
     updatedAt: now,

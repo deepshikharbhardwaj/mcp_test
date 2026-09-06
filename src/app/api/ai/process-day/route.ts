@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAiProvider } from "@/lib/ai";
-import type { BlogStyle, JournalEvent } from "@/types";
+import type { BlogStyle, JournalEvent, OutputLanguage } from "@/types";
 
 export const runtime = "nodejs";
 
@@ -8,6 +8,7 @@ interface ProcessDayRequest {
   transcript: string;
   dayDate: string;
   style: BlogStyle;
+  outputLanguage: OutputLanguage;
 }
 
 export async function POST(req: Request) {
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
       dayId: "pending",
     }));
 
-    const blog = await provider.generateBlog(eventsForBlog, body.style, body.dayDate);
+    const blog = await provider.generateBlog(eventsForBlog, body.style, body.outputLanguage ?? "en", body.dayDate);
 
     return NextResponse.json({
       providerName: provider.name,

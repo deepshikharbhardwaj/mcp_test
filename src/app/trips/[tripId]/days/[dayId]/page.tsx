@@ -8,7 +8,7 @@ import { processDayTranscript, regenerateSection as apiRegenerateSection } from 
 import { buildBlogDocument } from "@/lib/ai/build-blog";
 import { newId } from "@/lib/utils/id";
 import { formatLongDate } from "@/lib/utils/date";
-import type { BlogDocument, BlogStyle, Day, Image as JournalImage, JournalEvent, Trip } from "@/types";
+import type { BlogDocument, BlogStyle, Day, Image as JournalImage, JournalEvent, OutputLanguage, Trip } from "@/types";
 import { AudioRecorder } from "@/components/AudioRecorder";
 import { TranscriptPanel } from "@/components/TranscriptPanel";
 import { EventsList } from "@/components/EventsList";
@@ -27,6 +27,7 @@ export default function DayPage() {
   const [events, setEvents] = useState<JournalEvent[]>([]);
   const [blog, setBlog] = useState<BlogDocument | null>(null);
   const [style, setStyle] = useState<BlogStyle>("professional_travel");
+  const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("en");
   const [images, setImages] = useState<JournalImage[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
@@ -58,7 +59,10 @@ export default function DayPage() {
     transcriptRef.current = transcript?.rawText ?? "";
     setEvents(evs);
     setBlog(blogDoc ?? null);
-    if (blogDoc) setStyle(blogDoc.style);
+    if (blogDoc) {
+      setStyle(blogDoc.style);
+      setOutputLanguage(blogDoc.outputLanguage ?? "en");
+    }
     setImages(imgs);
     const urls: Record<string, string> = {};
     for (const img of imgs) urls[img.id] = await repo.getBlobUrl(img.blobKey);
@@ -109,7 +113,7 @@ export default function DayPage() {
     setGenerating(true);
     setError(null);
     try {
-      const result = await processDayTranscript(text, day.date, style);
+      const result = await processDayTranscript(text, day.date, style, outputLanguage);
       setProviderName(result.providerName);
       const repo = getRepository();
 
@@ -120,7 +124,7 @@ export default function DayPage() {
       }));
       await repo.saveEvents(dayId, eventsWithIds);
 
-      const blogDoc = buildBlogDocument(dayId, result.blog, style);
+      const blogDoc = buildBlogDocument(dayId, result.blog, style, outputLanguage);
       const saved = await repo.saveBlog(dayId, blogDoc);
 
       await repo.saveTranscript(dayId, text, { detectedLanguage: result.detectedLanguage, source: "manual" });
@@ -145,6 +149,15 @@ export default function DayPage() {
     }
   }
 
+  async function handleLanguageChange(next: OutputLanguage) {
+    setOutputLanguage(next);
+    if (blog) {
+      const repo = getRepository();
+      const saved = await repo.saveBlog(dayId, { ...blog, outputLanguage: next });
+      setBlog(saved);
+    }
+  }
+
   async function handleTitleChange(title: string) {
     if (!blog) return;
     const saved = await getRepository().saveBlog(dayId, { ...blog, title });
@@ -163,7 +176,7 @@ export default function DayPage() {
     setRegeneratingSectionId(sectionId);
     setError(null);
     try {
-      const result = await apiRegenerateSection(events, style, section.heading, section.paragraphs);
+      const result = await apiRegenerateSection(events, style, outputLanguage, section.heading, section.paragraphs);
       const repo = getRepository();
       const sections = blog.sections.map((s) =>
         s.id === sectionId
@@ -194,8 +207,8 @@ export default function DayPage() {
     setRegeneratingAll(true);
     setError(null);
     try {
-      const result = await processDayTranscript(transcriptText, day.date, style);
-      const blogDoc = buildBlogDocument(dayId, result.blog, style);
+      const result = await processDayTranscript(transcriptText, day.date, style, outputLanguage);
+      const blogDoc = buildBlogDocument(dayId, result.blog, style, outputLanguage);
       const saved = await getRepository().saveBlog(dayId, blogDoc);
       setBlog(saved);
     } catch (err) {
@@ -274,10 +287,21 @@ export default function DayPage() {
     <main className="max-w-2xl mx-auto px-5 pt-8 pb-32 sm:pt-14">
       <Link href={`/trips/${tripId}`} className="text-sm text-mist hover:text-ink">← {trip.name}</Link>
 
-      <header className="mt-4 mb-6">
-        <p className="text-xs tracking-widest text-mist font-medium">DAY {day.dayNumber}</p>
-        <h1 className="text-2xl font-serif font-semibold text-ink">{day.title ?? formatLongDate(day.date)}</h1>
-        {day.title && <p className="text-sm text-mist">{formatLongDate(day.date)}</p>}
+      <header className="relative mt-4 mb-6 rounded-2xl overflow-hidden h-40 sm:h-48">
+        <div
+          className={`absolute inset-0 ${images[0] && imageUrls[images[0].id] ? "" : "hero-fallback"}`}
+          style={
+            images[0] && imageUrls[images[0].id]
+              ? { backgroundImage: `url(${imageUrls[images[0].id]})`, backgroundSize: "cover", backgroundPosition: "center" }
+              : undefined
+          }
+        />
+        <div className="absolute inset-0 hero-overlay" />
+        <div className="relative h-full flex flex-col justify-end p-5 text-white">
+          <p className="text-xs tracking-widest font-medium text-white/80">DAY {day.dayNumber}</p>
+          <h1 className="text-2xl font-serif font-semibold drop-shadow-sm">{day.title ?? formatLongDate(day.date)}</h1>
+          {day.title && <p className="text-sm text-white/80">{formatLongDate(day.date)}</p>}
+        </div>
       </header>
 
       <div className="space-y-6">
@@ -306,17 +330,19 @@ export default function DayPage() {
           <>
             {providerName === "mock" && (
               <p className="text-xs text-mist text-center -mb-2">
-                Mock AI is active — add ANTHROPIC_API_KEY for full professional writing.
+                Mock AI is active — add GEMINI_API_KEY or ANTHROPIC_API_KEY for full professional writing (required for Hindi/Hinglish).
               </p>
             )}
             <BlogEditor
               blog={blog}
               style={style}
+              outputLanguage={outputLanguage}
               images={images}
               imageUrls={imageUrls}
               regeneratingSectionId={regeneratingSectionId}
               regeneratingAll={regeneratingAll}
               onStyleChange={handleStyleChange}
+              onLanguageChange={handleLanguageChange}
               onTitleChange={handleTitleChange}
               onSectionTextChange={handleSectionTextChange}
               onRegenerateSection={handleRegenerateSection}

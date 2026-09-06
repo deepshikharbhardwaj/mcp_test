@@ -1,4 +1,4 @@
-import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, OutputLanguage, Trip } from "@/types";
 import type { TripStoryMode } from "@/prompts/generate-trip-story";
 import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
 
@@ -34,10 +34,14 @@ export class MockAiProvider implements AiProvider {
     return { detectedLanguage: detectLanguage(transcript), events };
   }
 
-  async generateBlog(events: JournalEvent[], _style: BlogStyle, _dayDate: string): Promise<GeneratedBlog> {
+  async generateBlog(events: JournalEvent[], _style: BlogStyle, outputLanguage: OutputLanguage, _dayDate: string): Promise<GeneratedBlog> {
     if (events.length === 0) {
       return { title: "Untitled Day", sections: [] };
     }
+    // Honesty note: this heuristic provider cannot actually translate — it
+    // only lightly cleans up the transcript's own words, regardless of
+    // outputLanguage. Real Hindi/Hinglish rewriting needs Gemini or Anthropic.
+    void outputLanguage;
     const groups = groupEvents(events, 2);
     const sections: GeneratedSection[] = groups.map((group) => {
       const heading = group.find((e) => e.location)?.location ?? group[0]!.activity;
@@ -57,6 +61,7 @@ export class MockAiProvider implements AiProvider {
   async regenerateSection(
     events: JournalEvent[],
     _style: BlogStyle,
+    _outputLanguage: OutputLanguage,
     currentHeading: string,
     _currentParagraphs: string[]
   ): Promise<GeneratedSection> {

@@ -1,4 +1,4 @@
-import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, OutputLanguage, Trip } from "@/types";
 import type { TripStoryMode } from "@/prompts/generate-trip-story";
 
 export interface ExtractedEvents {
@@ -34,10 +34,11 @@ export interface GeneratedTripStory {
 export interface AiProvider {
   readonly name: string;
   extractEvents(transcript: string, dayDate: string): Promise<ExtractedEvents>;
-  generateBlog(events: JournalEvent[], style: BlogStyle, dayDate: string): Promise<GeneratedBlog>;
+  generateBlog(events: JournalEvent[], style: BlogStyle, outputLanguage: OutputLanguage, dayDate: string): Promise<GeneratedBlog>;
   regenerateSection(
     events: JournalEvent[],
     style: BlogStyle,
+    outputLanguage: OutputLanguage,
     currentHeading: string,
     currentParagraphs: string[]
   ): Promise<GeneratedSection>;

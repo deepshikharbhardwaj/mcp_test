@@ -74,6 +74,9 @@ export type BlogStyle =
   | "editorial"
   | "minimal";
 
+/** Output language for the generated blog text — independent of the language the transcript was spoken in. */
+export type OutputLanguage = "en" | "hi" | "hinglish";
+
 export interface ImagePlacement {
   id: string;
   sectionId: string;
@@ -97,6 +100,7 @@ export interface BlogDocument {
   dayId: string;
   title: string;
   style: BlogStyle;
+  outputLanguage: OutputLanguage;
   sections: BlogSection[];
   version: number;
   createdAt: ISODateTime;
@@ -121,4 +125,6 @@ export interface TripSummary {
   dayCount: number;
   photoCount: number;
   lastUpdated: ISODateTime;
+  /** Blob URL of the earliest uploaded photo in the trip, for the dashboard card backdrop. */
+  coverImageUrl: string | null;
 }

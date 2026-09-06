@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAiProvider } from "@/lib/ai";
-import type { BlogStyle, JournalEvent } from "@/types";
+import type { BlogStyle, JournalEvent, OutputLanguage } from "@/types";
 
 export const runtime = "nodejs";
 
 interface RegenerateSectionRequest {
   events: JournalEvent[];
   style: BlogStyle;
+  outputLanguage: OutputLanguage;
   currentHeading: string;
   currentParagraphs: string[];
 }
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
     const section = await provider.regenerateSection(
       body.events,
       body.style,
+      body.outputLanguage ?? "en",
       body.currentHeading,
       body.currentParagraphs
     );

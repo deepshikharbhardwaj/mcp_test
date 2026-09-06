@@ -1,4 +1,4 @@
-import type { BlogDocument, BlogStyle, Day, JournalEvent, Trip } from "@/types";
+import type { BlogDocument, BlogStyle, Day, JournalEvent, OutputLanguage, Trip } from "@/types";
 import type { TripStoryMode } from "@/prompts/generate-trip-story";
 import type { ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
 
@@ -7,12 +7,13 @@ import type { ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripSto
 export async function processDayTranscript(
   transcript: string,
   dayDate: string,
-  style: BlogStyle
+  style: BlogStyle,
+  outputLanguage: OutputLanguage
 ): Promise<{ providerName: string; detectedLanguage: ExtractedEvents["detectedLanguage"]; events: ExtractedEvents["events"]; blog: GeneratedBlog }> {
   const res = await fetch("/api/ai/process-day", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ transcript, dayDate, style }),
+    body: JSON.stringify({ transcript, dayDate, style, outputLanguage }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to process day");
@@ -22,13 +23,14 @@ export async function processDayTranscript(
 export async function regenerateSection(
   events: JournalEvent[],
   style: BlogStyle,
+  outputLanguage: OutputLanguage,
   currentHeading: string,
   currentParagraphs: string[]
 ): Promise<GeneratedSection> {
   const res = await fetch("/api/ai/regenerate-section", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ events, style, currentHeading, currentParagraphs }),
+    body: JSON.stringify({ events, style, outputLanguage, currentHeading, currentParagraphs }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to regenerate section");

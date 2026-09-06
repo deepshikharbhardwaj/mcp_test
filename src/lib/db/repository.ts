@@ -84,16 +84,23 @@ export class IndexedDBRepository implements JournalRepository {
     const summaries: TripSummary[] = [];
     for (const trip of trips) {
       const days = await dbGetAllByIndex<Day>(STORES.days, "tripId", trip.id);
+      const sortedDays = [...days].sort((a, b) => a.dayNumber - b.dayNumber);
       let photoCount = 0;
-      for (const day of days) {
+      let coverImageUrl: string | null = null;
+      for (const day of sortedDays) {
         const images = await dbGetAllByIndex<Image>(STORES.images, "dayId", day.id);
         photoCount += images.length;
+        if (!coverImageUrl && images.length > 0) {
+          const earliest = [...images].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0]!;
+          coverImageUrl = await this.getBlobUrl(earliest.blobKey);
+        }
       }
       summaries.push({
         trip,
         dayCount: days.length,
         photoCount,
         lastUpdated: trip.updatedAt,
+        coverImageUrl,
       });
     }
     summaries.sort((a, b) => (a.lastUpdated < b.lastUpdated ? 1 : -1));

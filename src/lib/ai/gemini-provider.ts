@@ -18,43 +18,52 @@ import {
 } from "@/prompts/generate-trip-story";
 import type { AiProvider, ExtractedEvents, GeneratedBlog, GeneratedSection, GeneratedTripStory } from "./types";
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-5";
+const DEFAULT_MODEL = "gemini-3.6-flash";
 
 /**
- * Real AI provider backed by Claude. Only ever instantiated and called
- * server-side (API routes / route handlers) — the API key never reaches the
- * browser. See `.env.example` for `ANTHROPIC_API_KEY`.
+ * Real AI provider backed by Google Gemini. Only ever instantiated and
+ * called server-side (API routes / route handlers) — the key never reaches
+ * the browser. See `.env.example` for `GEMINI_API_KEY`. Set `GEMINI_MODEL`
+ * to override the model (e.g. a "-pro" variant for higher quality at higher
+ * cost/latency).
  */
-export class AnthropicAiProvider implements AiProvider {
-  readonly name = "anthropic";
+export class GeminiAiProvider implements AiProvider {
+  readonly name = "gemini";
+  private readonly model: string;
 
-  constructor(private readonly apiKey: string) {}
+  constructor(private readonly apiKey: string, model?: string) {
+    this.model = model || DEFAULT_MODEL;
+  }
 
   private async complete(system: string, user: string): Promise<unknown> {
-    const res = await fetch(ANTHROPIC_API_URL, {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const res = await fetch(url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4096,
-        system,
-        messages: [{ role: "user", content: user }],
+        systemInstruction: { role: "system", parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.4,
+        },
       }),
     });
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`Anthropic API error ${res.status}: ${body.slice(0, 500)}`);
+      throw new Error(`Gemini API error ${res.status}: ${body.slice(0, 500)}`);
     }
 
-    const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-    const text = data.content?.find((c) => c.type === "text")?.text;
-    if (!text) throw new Error("Anthropic API returned no text content");
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      promptFeedback?: { blockReason?: string };
+    };
+    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("");
+    if (!text) {
+      const blockReason = data.promptFeedback?.blockReason;
+      throw new Error(blockReason ? `Gemini blocked the request: ${blockReason}` : "Gemini API returned no text content");
+    }
     return parseJsonLoose(text);
   }
 
@@ -102,7 +111,7 @@ export class AnthropicAiProvider implements AiProvider {
   }
 }
 
-/** Strips accidental markdown code fences before parsing, since prompts sometimes get wrapped anyway. */
+/** Strips accidental markdown code fences before parsing, in case responseMimeType is ignored. */
 function parseJsonLoose(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
